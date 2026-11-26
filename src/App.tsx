@@ -98,17 +98,27 @@ export function App() {
   const [copiedBrief, setCopiedBrief] = useState(false);
 
   useEffect(() => {
-    fetch('/models/model_benchmark.json')
+    const assetUrl = (p: string) =>
+      new URL(p.replace(/^\//, ''), new URL('./', window.location.href)).href;
+
+    fetch(assetUrl('models/model_benchmark.json'))
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data) setBenchmark(data as ModelBenchmark);
       })
       .catch(() => {});
 
-    fetch('/samples/manifest.json')
+    fetch(assetUrl('samples/manifest.json'))
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => {
-        if (Array.isArray(data)) setSamples(data as SamplePhoto[]);
+        if (Array.isArray(data)) {
+          setSamples(
+            (data as SamplePhoto[]).map((s) => ({
+              ...s,
+              url: assetUrl(s.url),
+            })),
+          );
+        }
       })
       .catch(() => {});
   }, []);

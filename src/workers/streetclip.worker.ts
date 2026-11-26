@@ -28,11 +28,15 @@ import type {
 
 const CACHE_NAME = 'streetclip-lens-v1';
 
-// Configure ONNX Runtime Web assets: point only `wasm` to public/ort/ so Vite
-// uses the bundled JS module inside ort.webgpu.bundle.min.mjs instead of
-// attempting a dynamic ES import() from /public.
+// Configure ONNX Runtime Web assets dynamically relative to the app root URL
+let assetBaseUrl = new URL('../', self.location.href).href;
+
+function resolveAsset(relPath: string): string {
+  return new URL(relPath.replace(/^\//, ''), assetBaseUrl).href;
+}
+
 ort.env.wasm.wasmPaths = {
-  wasm: '/ort/ort-wasm-simd-threaded.asyncify.wasm',
+  wasm: resolveAsset('ort/ort-wasm-simd-threaded.asyncify.wasm'),
 };
 ort.env.wasm.numThreads = 1;
 
@@ -41,6 +45,7 @@ interface InitRequest {
   id: number;
   engineSource: EngineSource;
   backendMode: BackendMode;
+  baseUrl?: string;
 }
 
 interface AnalyzeRequest {
@@ -177,6 +182,100 @@ async function fetchCachedArrayBuffer(
   return merged.buffer;
 }
 
+interface ChunkManifest {
+  totalBytes: number;
+  parts: string[];
+}
+
+async function fetchCachedModelBuffer(
+  modelRelPath: string,
+  stage: LoadProgress['stage'],
+  label: string,
+): Promise<ArrayBuffer> {
+  const canonicalUrl = resolveAsset(modelRelPath);
+  const cache = 'caches' in self ? await caches.open(CACHE_NAME) : null;
+  if (cache) {
+    const cached = await cache.match(canonicalUrl);
+    if (cached) {
+      const buf = await cached.arrayBuffer();
+      postProgress({
+        stage,
+        message: `${label} (from browser cache)`,
+        loadedBytes: buf.byteLength,
+        totalBytes: buf.byteLength,
+        cached: true,
+      });
+      return buf;
+    }
+  }
+
+  // Probe for chunked manifest (used on GitHub Pages where files must stay < 100 MB)
+  let manifest: ChunkManifest | null = null;
+  try {
+    const mResp = await fetch(resolveAsset(`${modelRelPath}.manifest.json`));
+    if (mResp.ok) {
+      const parsed = (await mResp.json()) as ChunkManifest;
+      if (parsed && Array.isArray(parsed.parts) && parsed.parts.length > 0 && parsed.totalBytes > 0) {
+        manifest = parsed;
+      }
+    }
+  } catch {
+    // Fall back to direct monolithic fetch
+  }
+
+  if (!manifest) {
+    return fetchCachedArrayBuffer(canonicalUrl, stage, label);
+  }
+
+  const totalBytes = manifest.totalBytes;
+  const merged = new Uint8Array(totalBytes);
+  let offset = 0;
+  let lastEmit = 0;
+
+  for (const partPath of manifest.parts) {
+    const partResp = await fetch(resolveAsset(partPath));
+    if (!partResp.ok) {
+      throw new Error(`HTTP ${partResp.status} fetching ${partPath}`);
+    }
+    const reader = partResp.body?.getReader();
+    if (!reader) {
+      const chunk = new Uint8Array(await partResp.arrayBuffer());
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+      postProgress({ stage, message: label, loadedBytes: offset, totalBytes, cached: false });
+      continue;
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        merged.set(value, offset);
+        offset += value.byteLength;
+        const now = performance.now();
+        if (now - lastEmit > 110) {
+          lastEmit = now;
+          postProgress({ stage, message: label, loadedBytes: offset, totalBytes, cached: false });
+        }
+      }
+    }
+  }
+
+  postProgress({ stage, message: label, loadedBytes: offset, totalBytes, cached: false });
+
+  const finalBuf = offset === totalBytes ? merged.buffer : merged.buffer.slice(0, offset);
+  if (cache) {
+    await cache.put(
+      canonicalUrl,
+      new Response(finalBuf.slice(0), {
+        headers: { 'content-type': 'application/octet-stream' },
+      }),
+    );
+  }
+
+  return finalBuf;
+}
+
 async function hasWebGpuAdapter(): Promise<boolean> {
   try {
     const gpu = (navigator as Navigator & { gpu?: { requestAdapter: () => Promise<unknown | null> } }).gpu;
@@ -216,7 +315,7 @@ async function createOrtSession(
 
 async function ensureCatalogOnly(): Promise<void> {
   if (catalog) return;
-  const catResp = await fetch('/models/leads_catalog.json');
+  const catResp = await fetch(resolveAsset('models/leads_catalog.json'));
   if (!catResp.ok) {
     throw new Error(`Failed to fetch leads_catalog.json: HTTP ${catResp.status}`);
   }
@@ -233,7 +332,7 @@ async function ensureLeadsPack(): Promise<void> {
       totalBytes: 0,
     });
     const binBuf = await fetchCachedArrayBuffer(
-      '/models/leads_embeddings.f16.bin',
+      resolveAsset('models/leads_embeddings.f16.bin'),
       'catalog',
       'Loading leads embedding vectors',
     );
@@ -244,12 +343,12 @@ async function ensureLeadsPack(): Promise<void> {
     try {
       const [headBuf, coordsBuf] = await Promise.all([
         fetchCachedArrayBuffer(
-          '/models/geocells_head.f16.bin',
+          resolveAsset('models/geocells_head.f16.bin'),
           'geocells',
           'Loading OSV-5M 5,000-cell coordinate head',
         ),
         fetchCachedArrayBuffer(
-          '/models/geocells_coords.f32.bin',
+          resolveAsset('models/geocells_coords.f32.bin'),
           'geocells',
           'Loading OSV-5M cell centroids',
         ),
@@ -266,7 +365,7 @@ async function ensureOsv5mQuadtree(): Promise<void> {
   await ensureCatalogOnly();
   if (!osv5mQuadtreeF32) {
     const qtBuf = await fetchCachedArrayBuffer(
-      '/models/osv5m_quadtree.f32.bin',
+      resolveAsset('models/osv5m_quadtree.f32.bin'),
       'osv5m',
       'Loading OSV-5M 11,399-cell quadtree coordinates',
     );
@@ -295,15 +394,25 @@ async function releaseSessions(): Promise<void> {
   }
 }
 
-async function initEngine(engineSource: EngineSource, backendMode: BackendMode): Promise<{ backend: ActiveBackend }> {
+async function initEngine(
+  engineSource: EngineSource,
+  backendMode: BackendMode,
+  baseUrl?: string,
+): Promise<{ backend: ActiveBackend }> {
+  if (baseUrl) {
+    assetBaseUrl = baseUrl;
+    ort.env.wasm.wasmPaths = {
+      wasm: resolveAsset('ort/ort-wasm-simd-threaded.asyncify.wasm'),
+    };
+  }
   await releaseSessions();
   activeEngineSource = engineSource;
   activeBackendMode = backendMode;
 
   if (engineSource === 'local-q4' || engineSource === 'dual-q4') {
     await ensureLeadsPack();
-    const modelBytes = await fetchCachedArrayBuffer(
-      '/models/vision_q4.onnx',
+    const modelBytes = await fetchCachedModelBuffer(
+      'models/vision_q4.onnx',
       'vision',
       'Loading quantized StreetCLIP Vision Q4 encoder',
     );
@@ -320,8 +429,8 @@ async function initEngine(engineSource: EngineSource, backendMode: BackendMode):
 
   if (engineSource === 'osv5m-q4' || engineSource === 'dual-q4') {
     await ensureOsv5mQuadtree();
-    const osvBytes = await fetchCachedArrayBuffer(
-      '/models/osv5m_q4.onnx',
+    const osvBytes = await fetchCachedModelBuffer(
+      'models/osv5m_q4.onnx',
       'osv5m',
       'Loading quantized OSV-5M Baseline Q4 model',
     );
@@ -382,15 +491,15 @@ async function ensureTokenizer(): Promise<PreTrainedTokenizer> {
   if (tokenizer) return tokenizer;
   hfEnv.allowLocalModels = true;
   hfEnv.allowRemoteModels = false;
-  hfEnv.localModelPath = '/models/';
+  hfEnv.localModelPath = resolveAsset('models/');
   tokenizer = await AutoTokenizer.from_pretrained('tokenizer', { local_files_only: true });
   return tokenizer;
 }
 
 async function ensureTextSession(): Promise<ort.InferenceSession> {
   if (textSession) return textSession;
-  const textBytes = await fetchCachedArrayBuffer(
-    '/models/text_q4.onnx',
+  const textBytes = await fetchCachedModelBuffer(
+    'models/text_q4.onnx',
     'text',
     'Loading on-demand Text Q4 encoder for custom probes',
   );
@@ -634,7 +743,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data;
   try {
     if (msg.type === 'init') {
-      const result = await initEngine(msg.engineSource, msg.backendMode);
+      const result = await initEngine(msg.engineSource, msg.backendMode, msg.baseUrl);
       self.postMessage({ type: 'response', id: msg.id, ok: true, result });
     } else if (msg.type === 'analyze') {
       const result = await handleAnalyze(msg);

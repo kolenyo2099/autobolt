@@ -62,7 +62,8 @@ export class StreetClipClient {
   }
 
   init(engineSource: EngineSource, backendMode: BackendMode): Promise<{ backend: ActiveBackend }> {
-    return this.call({ type: 'init', engineSource, backendMode });
+    const baseUrl = new URL('./', window.location.href).href;
+    return this.call({ type: 'init', engineSource, backendMode, baseUrl });
   }
 
   analyze(params: {

@@ -9,6 +9,7 @@
     "dev": "vite",
     "prebuild": "node scripts/copy-ort-assets.mjs",
     "build": "tsc --noEmit && vite build",
+    "build:pages": "pnpm build && node scripts/prepare-pages-dist.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
