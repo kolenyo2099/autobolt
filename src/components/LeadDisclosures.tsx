@@ -6,10 +6,7 @@ import {
   SlidersHorizontal,
   Crosshair,
   Layers,
-  ScanText,
-  Square,
 } from 'lucide-react';
-import { VLM_MODEL_SPECS } from '../engine/vlmClient';
 import type {
   ActiveBackend,
   AnalysisResult,
@@ -18,9 +15,6 @@ import type {
   EngineSource,
   ScoredCity,
   ScoredCountry,
-  VlmModelId,
-  VlmProgress,
-  VlmResult,
 } from '../engine/types';
 
 interface LeadDisclosuresProps {
@@ -42,18 +36,6 @@ interface LeadDisclosuresProps {
   onSelectCity: (city: ScoredCity) => void;
   onFocusCoords: (lat: number, lng: number) => void;
   onRunCustomProbe: (labels: string[], useStreetTemplate: boolean) => void;
-  hasImage: boolean;
-  vlmModelId: VlmModelId;
-  vlmGrounded: boolean;
-  vlmLoading: boolean;
-  vlmProgress: VlmProgress | null;
-  vlmStreamText: string;
-  vlmResult: VlmResult | null;
-  vlmError: string | null;
-  onChangeVlmModel: (id: VlmModelId) => void;
-  onChangeVlmGrounded: (grounded: boolean) => void;
-  onRunVlmCheck: (modelId: VlmModelId, grounded: boolean) => void;
-  onStopVlm: () => void;
 }
 
 const PROBE_PRESETS = [
@@ -101,18 +83,6 @@ export function LeadDisclosures({
   onSelectCity,
   onFocusCoords,
   onRunCustomProbe,
-  hasImage,
-  vlmModelId,
-  vlmGrounded,
-  vlmLoading,
-  vlmProgress,
-  vlmStreamText,
-  vlmResult,
-  vlmError,
-  onChangeVlmModel,
-  onChangeVlmGrounded,
-  onRunVlmCheck,
-  onStopVlm,
 }: LeadDisclosuresProps) {
   const stackRef = useRef<HTMLDivElement>(null);
   const [allExpanded, setAllExpanded] = useState(false);
@@ -192,19 +162,6 @@ export function LeadDisclosures({
   const runtimePreview = result
     ? `${engineDisplay} · ${result.backend.toUpperCase()} · ${result.latencyMs.toFixed(0)} ms`
     : `${engineDisplay}${backend !== 'unknown' ? ` · ${backend.toUpperCase()}` : ''}`;
-
-  const selectedVlmSpec =
-    VLM_MODEL_SPECS.find((m) => m.id === vlmModelId) ?? VLM_MODEL_SPECS[0];
-  const vlmPreview = vlmLoading
-    ? vlmProgress?.stage === 'generating'
-      ? 'Streaming clues…'
-      : vlmProgress?.percent !== undefined
-        ? `Downloading ${vlmProgress.percent}%…`
-        : 'Loading Qwen-VL…'
-    : vlmResult
-      ? `${vlmResult.modelLabel} · ${(vlmResult.latencyMs / 1000).toFixed(1)}s`
-      : `On-demand OCR & sign reasoning (${selectedVlmSpec.approxSizeLabel})`;
-  const vlmActiveText = vlmResult?.text ?? vlmStreamText;
 
   const handleProbeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -674,136 +631,7 @@ export function LeadDisclosures({
           </div>
         </details>
 
-        {/* 4. Deep VLM clue check (Qwen-VL Q4) */}
-        <details className="disclosure" onToggle={syncAllExpanded}>
-          <summary>
-            <span className="summary-title">Deep VLM clue check (Qwen-VL Q4)</span>
-            <span className="summary-preview">{vlmPreview}</span>
-          </summary>
-          <div className="disclosure-body">
-            <div className="vlm-controls">
-              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Runs an on-demand 4-bit quantized Qwen vision-language model locally on WebGPU (cached in your browser after first download) to read street signs, storefront text, and road clues.
-              </p>
-
-              <div className="vlm-row">
-                <div className="field-group" style={{ flex: '1 1 240px' }}>
-                  <label htmlFor="vlm-model-select" style={{ fontWeight: 600 }}>
-                    Quantized Qwen-VL Model
-                  </label>
-                  <select
-                    id="vlm-model-select"
-                    className="field-select"
-                    value={vlmModelId}
-                    disabled={vlmLoading}
-                    onChange={(e) => onChangeVlmModel(e.target.value as VlmModelId)}
-                  >
-                    {VLM_MODEL_SPECS.map((spec) => (
-                      <option key={spec.id} value={spec.id}>
-                        {spec.label} ({spec.approxSizeLabel}) — {spec.notes}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="vlm-actions">
-                  {vlmLoading ? (
-                    <button type="button" className="btn btn-sm" onClick={onStopVlm}>
-                      <Square size={13} aria-hidden="true" />
-                      <span>Stop</span>
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={!hasImage || vlmLoading}
-                    onClick={() => onRunVlmCheck(vlmModelId, vlmGrounded)}
-                  >
-                    {vlmLoading ? (
-                      <Loader2 size={14} aria-hidden="true" />
-                    ) : (
-                      <ScanText size={14} aria-hidden="true" />
-                    )}
-                    <span>{vlmLoading ? 'Running…' : 'Run VLM Clue Check'}</span>
-                  </button>
-                </div>
-              </div>
-
-              <label
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  fontSize: '0.8rem',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={vlmGrounded}
-                  disabled={vlmLoading}
-                  onChange={(e) => onChangeVlmGrounded(e.target.checked)}
-                />
-                <span>Ground prompt with AutoBolt&apos;s top country/city/coordinate leads</span>
-              </label>
-
-              {vlmLoading && vlmProgress && (
-                <div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      gap: '0.5rem',
-                      fontSize: '0.78rem',
-                      color: 'var(--text-secondary)',
-                      marginBottom: '0.3rem',
-                    }}
-                  >
-                    <span>{vlmProgress.message}</span>
-                    {vlmProgress.totalBytes > 1 && (
-                      <span className="mono">
-                        {(vlmProgress.loadedBytes / (1024 * 1024)).toFixed(0)} /{' '}
-                        {(vlmProgress.totalBytes / (1024 * 1024)).toFixed(0)} MB
-                        {vlmProgress.percent !== undefined ? ` (${vlmProgress.percent}%)` : ''}
-                      </span>
-                    )}
-                  </div>
-                  <progress
-                    className="scl-progress"
-                    aria-label="Loading quantized Qwen-VL model"
-                    max={100}
-                    value={vlmProgress.percent}
-                  />
-                </div>
-              )}
-
-              {vlmError && (
-                <div className="vlm-error" role="alert">
-                  <strong>VLM error:</strong> {vlmError}
-                </div>
-              )}
-
-              {vlmActiveText && (
-                <div className="vlm-output-card">
-                  <div className="vlm-meta-row mono">
-                    <span>{vlmResult ? vlmResult.modelLabel : selectedVlmSpec.label}</span>
-                    {vlmResult ? (
-                      <span>
-                        {vlmResult.backend.toUpperCase()} · {vlmResult.dtype.toUpperCase()} ·{' '}
-                        {(vlmResult.latencyMs / 1000).toFixed(1)}s ·{' '}
-                        {vlmResult.tokensPerSec.toFixed(1)} tok/s
-                      </span>
-                    ) : (
-                      <span>Streaming…</span>
-                    )}
-                  </div>
-                  <div className="vlm-output-text">{vlmActiveText}</div>
-                </div>
-              )}
-            </div>
-          </div>
-        </details>
-
-        {/* 5. Runtime & quantization details */}
+        {/* 4. Runtime & quantization details */}
         <details className="disclosure" onToggle={syncAllExpanded}>
           <summary>
             <span className="summary-title">Runtime &amp; quantization details</span>

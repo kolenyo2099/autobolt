@@ -522,7 +522,22 @@ export function App() {
         />
 
         <div className="right-column">
-          <LeadSummary result={result} analyzing={modelStatus === 'analyzing'} />
+          <LeadSummary
+            result={result}
+            analyzing={modelStatus === 'analyzing'}
+            hasImage={Boolean(imageBitmap)}
+            vlmModelId={vlmModelId}
+            vlmGrounded={vlmGrounded}
+            vlmLoading={vlmLoading}
+            vlmProgress={vlmProgress}
+            vlmStreamText={vlmStreamText}
+            vlmResult={vlmResult}
+            vlmError={vlmError}
+            onChangeVlmModel={setVlmModelId}
+            onChangeVlmGrounded={setVlmGrounded}
+            onRunVlmCheck={handleRunVlmCheck}
+            onStopVlm={handleStopVlm}
+          />
 
           <WorldMap
             countries={result?.countries ?? []}
@@ -569,18 +584,6 @@ export function App() {
               setFocusTarget({ points: [{ lat, lng }], seq: Date.now() })
             }
             onRunCustomProbe={handleRunCustomProbe}
-            hasImage={Boolean(imageBitmap)}
-            vlmModelId={vlmModelId}
-            vlmGrounded={vlmGrounded}
-            vlmLoading={vlmLoading}
-            vlmProgress={vlmProgress}
-            vlmStreamText={vlmStreamText}
-            vlmResult={vlmResult}
-            vlmError={vlmError}
-            onChangeVlmModel={setVlmModelId}
-            onChangeVlmGrounded={setVlmGrounded}
-            onRunVlmCheck={handleRunVlmCheck}
-            onStopVlm={handleStopVlm}
           />
         </div>
       </main>
