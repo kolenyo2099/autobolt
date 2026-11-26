@@ -1,0 +1,103 @@
+{
+  "generatedAt": "2026-11-25T18:45:44Z",
+  "sourceRepo": "onnx-community/StreetCLIP-ONNX",
+  "logitScale": 99.99981689453125,
+  "sizesMB": {
+    "hf_fp32": 1712.53,
+    "hf_fp16": 856.64,
+    "hf_int8": 433.62,
+    "hf_q4": 402.05,
+    "hf_q4f16": 298.49,
+    "local_vision_q4": 159.63,
+    "local_text_q4": 91.71,
+    "local_embeddings_f16": 1.0,
+    "local_tokenizer": 3.47,
+    "local_geocells_f16": 7.32,
+    "local_osv5m_q4": 197.69
+  },
+  "visionQuantization": {
+    "method": "MatMulNBitsQuantizer (RTN symmetric weight-only INT4)",
+    "blockSize": 128,
+    "isSymmetric": true,
+    "accuracyLevel": 4,
+    "minCosineSimilarityVsFp32": 0.98344,
+    "samples": [
+      {
+        "file": "nagasaki.jpg",
+        "cosineSimVsFp32": 0.98344,
+        "topCountryFp32": "Japan",
+        "topCountryQ4": "Japan",
+        "topCityFp32": "Nagasaki",
+        "topCityQ4": "Nagasaki"
+      },
+      {
+        "file": "sanfrancisco.jpeg",
+        "cosineSimVsFp32": 0.98733,
+        "topCountryFp32": "United States",
+        "topCountryQ4": "United States",
+        "topCityFp32": "San Francisco",
+        "topCityQ4": "San Francisco"
+      }
+    ]
+  },
+  "textQuantization": {
+    "method": "MatMulNBitsQuantizer (block_size=32, asymmetric INT4, FP32 text_projection)",
+    "blockSize": 32,
+    "tokenEmbeddingQuantization": "Per-row UINT8 (49408x768) reconstructed with Gather+Cast+Sub+Mul",
+    "minCosineSimilarityVsFp32": 0.98144,
+    "promptsTested": 5
+  },
+  "geocellProbe": {
+    "sourceRepo": "Daggerabuse/geoguessr-streetclip-geocells",
+    "dataset": "osv5m/osv5m (500k subset, 5,000 quadtree cells)",
+    "license": "CC BY-SA 4.0 (cells) / CC BY-NC 4.0 (StreetCLIP backbone)",
+    "numCells": 5000,
+    "maxProbDiffVsF32": 0.0002,
+    "samples": [
+      {
+        "file": "nagasaki.jpg",
+        "topCellId": 3763,
+        "topCellProb": 0.2523,
+        "topCellMatchF32": true,
+        "estimatedLat": 35.2922,
+        "estimatedLng": 138.6541,
+        "errorKmVsGroundTruth": 856.4
+      },
+      {
+        "file": "sanfrancisco.jpeg",
+        "topCellId": 985,
+        "topCellProb": 0.4034,
+        "topCellMatchF32": true,
+        "estimatedLat": 37.7165,
+        "estimatedLng": -122.3653,
+        "errorKmVsGroundTruth": 8.1
+      }
+    ]
+  },
+  "osv5mQuantization": {
+    "sourceRepo": "osv5m/baseline",
+    "inputSize": 224,
+    "numCells": 11399,
+    "method": "MatMulNBitsQuantizer (RTN symmetric weight-only INT4)",
+    "blockSize": 32,
+    "maxShiftKmVsFp32": 0.4,
+    "samples": [
+      {
+        "file": "nagasaki.jpg",
+        "estimatedLat": 25.1205,
+        "estimatedLng": 121.5523,
+        "topCellProb": 0.2627,
+        "shiftKmVsFp32": 0.3,
+        "errorKmVsGroundTruth": 1172.2
+      },
+      {
+        "file": "sanfrancisco.jpeg",
+        "estimatedLat": 37.8038,
+        "estimatedLng": -122.3936,
+        "topCellProb": 0.9286,
+        "shiftKmVsFp32": 0.4,
+        "errorKmVsGroundTruth": 3.9
+      }
+    ]
+  }
+}

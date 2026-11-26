@@ -1,0 +1,8 @@
+{
+  "totalBytes": 96167394,
+  "parts": [
+    "models/chunks/text_q4.onnx.part00",
+    "models/chunks/text_q4.onnx.part01",
+    "models/chunks/text_q4.onnx.part02"
+  ]
+}

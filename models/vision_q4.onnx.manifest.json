@@ -1,0 +1,9 @@
+{
+  "totalBytes": 167382171,
+  "parts": [
+    "models/chunks/vision_q4.onnx.part00",
+    "models/chunks/vision_q4.onnx.part01",
+    "models/chunks/vision_q4.onnx.part02",
+    "models/chunks/vision_q4.onnx.part03"
+  ]
+}

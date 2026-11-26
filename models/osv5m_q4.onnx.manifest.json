@@ -1,0 +1,10 @@
+{
+  "totalBytes": 207296271,
+  "parts": [
+    "models/chunks/osv5m_q4.onnx.part00",
+    "models/chunks/osv5m_q4.onnx.part01",
+    "models/chunks/osv5m_q4.onnx.part02",
+    "models/chunks/osv5m_q4.onnx.part03",
+    "models/chunks/osv5m_q4.onnx.part04"
+  ]
+}

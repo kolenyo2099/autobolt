@@ -1,0 +1,18 @@
+[
+  {
+    "id": "nagasaki",
+    "title": "Nagasaki Street",
+    "subtitle": "StreetCLIP Benchmark",
+    "url": "samples/nagasaki.jpg",
+    "expectedCountry": "Japan",
+    "expectedCity": "Nagasaki"
+  },
+  {
+    "id": "sanfrancisco",
+    "title": "San Francisco",
+    "subtitle": "StreetCLIP Benchmark",
+    "url": "samples/sanfrancisco.jpeg",
+    "expectedCountry": "United States",
+    "expectedCity": "San Francisco"
+  }
+]
