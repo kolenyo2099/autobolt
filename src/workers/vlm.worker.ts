@@ -162,17 +162,31 @@ async function ensureModelLoaded(modelId: VlmModelId): Promise<void> {
   loadedModelId = modelId;
 }
 
-function buildGeoPrompt(contextLeadSummary?: string): string {
+function buildGeoPrompt(contextLeadSummary?: string, isRoiCrop = false): string {
+  if (isRoiCrop) {
+    const bgBlock = contextLeadSummary
+      ? `Background context from full photo (optional):\n${contextLeadSummary}\n\n`
+      : '';
+    return (
+      `${bgBlock}` +
+      `This image is a ZOOMED-IN CROP (ROI) from a larger street photo. Answer concisely in 4 short single-sentence bullets (under 120 words total):\n` +
+      `1. **Crop Subject**: Briefly state what object or scene detail is shown in this crop.\n` +
+      `2. **Verbatim Text & Codes**: Transcribe any legible words, scripts, issuing authority, or phone/area codes (or "None legible").\n` +
+      `3. **Clues**: Note plate colors/shape, road markings, poles, signage style, or mirror-flip cues.\n` +
+      `4. **Assessment**: Country/region/city clue implied by this specific crop.`
+    );
+  }
+
   const leadBlock = contextLeadSummary
     ? `AutoBolt candidate hypotheses to verify or challenge:\n${contextLeadSummary}\n\n`
     : '';
   return (
     `${leadBlock}` +
-    `Follow this ordered geolocation observation checklist concisely (mark unclear details as "illegible"):\n` +
-    `1. **Capture & Orientation**: Platform (street/building/vehicle/aerial) and whether any text/traffic appears horizontally mirrored.\n` +
-    `2. **Verbatim Text, Codes & Script**: Quote exact visible text, issuing authorities, phone/area codes (with '+' country code if visible), script/language, and license plate aspect/color.\n` +
-    `3. **Driving Side & Infrastructure**: Left- vs right-hand traffic, utility poles/bollards, streetlights, road markings, architecture, and climate.\n` +
-    `4. **Assessment**: Best city/region/country call and whether these clues confirm or challenge any candidate leads.`
+    `Answer concisely in 4 short single-sentence bullets (under 140 words total; write "illegible" if unclear):\n` +
+    `1. **Capture**: Platform (street/building/vehicle) and whether text/traffic appears horizontally mirrored.\n` +
+    `2. **Text & Codes**: Quote exact legible signs, scripts, issuing authorities, or phone/area codes.\n` +
+    `3. **Road & Scene**: Driving side, plate style, utility poles/bollards, architecture, and climate.\n` +
+    `4. **Assessment**: Best city/region/country call and whether visual evidence confirms or challenges the leads.`
   );
 }
 
@@ -193,6 +207,7 @@ self.onmessage = async (event: MessageEvent) => {
       const width = event.data.width as number;
       const height = event.data.height as number;
       const contextLeadSummary = event.data.contextLeadSummary as string | undefined;
+      const isRoiCrop = Boolean(event.data.isRoiCrop);
 
       await ensureModelLoaded(modelId);
 
@@ -206,7 +221,7 @@ self.onmessage = async (event: MessageEvent) => {
       });
 
       const rawImage = new RawImage(imageData, width, height, 3);
-      const promptText = buildGeoPrompt(contextLeadSummary);
+      const promptText = buildGeoPrompt(contextLeadSummary, isRoiCrop);
       const messages = [
         {
           role: 'user',
@@ -247,7 +262,7 @@ self.onmessage = async (event: MessageEvent) => {
 
       const outputs = await loadedModel.generate({
         ...inputs,
-        max_new_tokens: 300,
+        max_new_tokens: 512,
         do_sample: false,
         streamer,
       });
@@ -285,6 +300,9 @@ self.onmessage = async (event: MessageEvent) => {
           tokenCount,
           tokensPerSec: tokenCount / elapsedSec,
           groundedWithLeads: Boolean(contextLeadSummary),
+          isRoiCrop,
+          cropWidth: width,
+          cropHeight: height,
         },
       });
       return;

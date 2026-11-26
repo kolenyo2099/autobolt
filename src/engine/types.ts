@@ -322,20 +322,23 @@ export interface VlmResult {
   tokenCount: number;
   tokensPerSec: number;
   groundedWithLeads: boolean;
+  isRoiCrop: boolean;
+  cropWidth: number;
+  cropHeight: number;
 }
 
 export type EvidenceStatus = 'observed' | 'read' | 'inferred' | 'computed';
 
 export interface EvidenceEntry {
   id: string;
-  kind: 'calling-code' | 'driving-side' | 'script' | 'plate' | 'area-code' | 'territory' | 'sun' | 'custom';
+  kind: 'calling-code' | 'driving-side' | 'script' | 'plate' | 'area-code' | 'territory' | 'custom';
   label: string;
   detail: string;
   status: EvidenceStatus;
   countryCodes: string[];
   likelihoodRatio: number;
   active: boolean;
-  source: 'lookup' | 'vlm-ocr' | 'sun' | 'manual';
+  source: 'lookup' | 'vlm-ocr' | 'manual';
 }
 
 export interface ClueMatch {
@@ -346,48 +349,4 @@ export interface ClueMatch {
   countryCodes: string[];
   likelihoodRatio: number;
   status: EvidenceStatus;
-}
-
-export interface SolarBandPoint {
-  lat: number;
-  lng: number;
-  score: number;
-  elevDiffDeg: number;
-  azDiffDeg?: number;
-}
-
-export interface SolarTimeWindow {
-  startTime: string;
-  endTime: string;
-  peakMatchTime: string;
-  elevDeg: number;
-  azimuthDeg: number;
-  shadowBearingDeg: number;
-}
-
-export interface OsmPin {
-  id: string;
-  name: string;
-  category: string;
-  lat: number;
-  lng: number;
-}
-
-export interface SkylineSample {
-  xNorm: number;
-  elevDeg: number;
-  distanceKm: number;
-  bearingDeg: number;
-}
-
-export interface SkylineProfile {
-  lat: number;
-  lng: number;
-  headingDeg: number;
-  hfovDeg: number;
-  pitchDeg: number;
-  observerElevM: number;
-  maxElevDeg: number;
-  minElevDeg: number;
-  samples: SkylineSample[];
 }

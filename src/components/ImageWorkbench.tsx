@@ -11,14 +11,12 @@ import {
   FlipHorizontal2,
   Grid2x2,
   ScanText,
-  X,
 } from 'lucide-react';
 import type {
   AnalysisMode,
   ExifMetadata,
   RoiRect,
   SamplePhoto,
-  SkylineProfile,
   VlmModelId,
 } from '../engine/types';
 import { haversineDistanceKm } from '../engine/exif';
@@ -29,7 +27,6 @@ interface ImageWorkbenchProps {
   imageName: string;
   imageBitmap: ImageBitmap | null;
   isMirrored: boolean;
-  skyline: SkylineProfile | null;
   samples: SamplePhoto[];
   activeSampleId: string | null;
   mode: AnalysisMode;
@@ -47,7 +44,6 @@ interface ImageWorkbenchProps {
   onChangeMode: (mode: AnalysisMode) => void;
   onChangeRoi: (roi: RoiRect) => void;
   onToggleMirror: () => void;
-  onClearSkyline: () => void;
   onRunAnalysis: (modeOverride?: AnalysisMode, roiOverride?: RoiRect) => void;
   onRunVlmOnRoi: (modelId: VlmModelId, grounded: boolean, roiOverride: RoiRect) => void;
   onToggleRevealGps: () => void;
@@ -70,7 +66,6 @@ export function ImageWorkbench({
   imageName,
   imageBitmap,
   isMirrored,
-  skyline,
   samples,
   activeSampleId,
   mode,
@@ -88,7 +83,6 @@ export function ImageWorkbench({
   onChangeMode,
   onChangeRoi,
   onToggleMirror,
-  onClearSkyline,
   onRunAnalysis,
   onRunVlmOnRoi,
   onToggleRevealGps,
@@ -216,7 +210,6 @@ export function ImageWorkbench({
         </div>
 
         <div
-          ref={stageRef}
           className={`image-stage ${imageUrl ? 'has-image' : ''} ${dragOver ? 'drag-active' : ''}`}
           onDragOver={(e) => {
             e.preventDefault();
@@ -230,7 +223,20 @@ export function ImageWorkbench({
           }}
         >
           {imageUrl ? (
-            <>
+            <div
+              ref={stageRef}
+              className="stage-media-frame"
+              style={
+                imageBitmap
+                  ? {
+                      aspectRatio: `${imageBitmap.width} / ${imageBitmap.height}`,
+                      ...(imageBitmap.width / imageBitmap.height >= 4 / 3
+                        ? { inlineSize: '100%', blockSize: 'auto' }
+                        : { blockSize: '100%', inlineSize: 'auto' }),
+                    }
+                  : undefined
+              }
+            >
               <img
                 src={imageUrl}
                 alt={`Evidence photo: ${imageName}`}
@@ -238,50 +244,6 @@ export function ImageWorkbench({
                 style={isMirrored ? { transform: 'scaleX(-1)' } : undefined}
                 decoding="async"
               />
-              {skyline && skyline.samples.length > 1 && (() => {
-                const vf = (skyline.hfovDeg * 3) / 4;
-                const yOfElev = (deg: number) => {
-                  const yNorm = 0.5 - (deg - skyline.pitchDeg) / Math.max(12, vf);
-                  return Math.max(2, Math.min(98, yNorm * 100));
-                };
-                const pts = skyline.samples
-                  .map((s) => `${(s.xNorm * 100).toFixed(2)},${yOfElev(s.elevDeg).toFixed(2)}`)
-                  .join(' ');
-                const hY = yOfElev(0);
-                return (
-                  <div className="skyline-overlay" aria-label="3D terrain skyline overlay">
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="skyline-svg">
-                      <line
-                        x1="0"
-                        y1={hY}
-                        x2="100"
-                        y2={hY}
-                        stroke="rgba(255,255,255,0.5)"
-                        strokeWidth="0.45"
-                        strokeDasharray="1.5 1.5"
-                      />
-                      <polyline
-                        fill="none"
-                        stroke="#f59e0b"
-                        strokeWidth="1.15"
-                        vectorEffect="non-scaling-stroke"
-                        points={pts}
-                      />
-                    </svg>
-                    <button
-                      type="button"
-                      className="skyline-badge"
-                      onClick={onClearSkyline}
-                      title="Dismiss DEM terrain skyline overlay"
-                    >
-                      <span>
-                        DEM Skyline · Hdg {skyline.headingDeg}° · Max {skyline.maxElevDeg.toFixed(1)}°
-                      </span>
-                      <X size={12} aria-hidden="true" />
-                    </button>
-                  </div>
-                );
-              })()}
               {mode === 'roi' && (
                 <div
                   className="roi-overlay"
@@ -305,7 +267,7 @@ export function ImageWorkbench({
                   </div>
                 </div>
               )}
-            </>
+            </div>
           ) : (
             <div className="drop-empty">
               <Upload size={26} aria-hidden="true" />
@@ -320,15 +282,26 @@ export function ImageWorkbench({
         {mode === 'roi' && imageUrl && (
           <div className="roi-inline-bar">
             <span>Drag across the photo to isolate a sign, building, or detail.</span>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              disabled={!imageBitmap || !modelReady || analyzing}
-              onClick={() => onRunAnalysis()}
-            >
-              <RefreshCw size={13} aria-hidden="true" />
-              <span>{analyzing ? 'Analyzing…' : 'Analyze ROI'}</span>
-            </button>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={!imageBitmap || vlmLoading}
+                onClick={() => onRunVlmOnRoi(vlmModelId, vlmGrounded, roi)}
+              >
+                <ScanText size={13} aria-hidden="true" />
+                <span>{vlmLoading ? 'Running VLM…' : 'VLM on ROI'}</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={!imageBitmap || !modelReady || analyzing}
+                onClick={() => onRunAnalysis()}
+              >
+                <RefreshCw size={13} aria-hidden="true" />
+                <span>{analyzing ? 'Analyzing…' : 'Analyze ROI'}</span>
+              </button>
+            </div>
           </div>
         )}
 

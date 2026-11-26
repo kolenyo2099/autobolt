@@ -31,9 +31,12 @@ interface LeadSummaryProps {
   vlmStreamText: string;
   vlmResult: VlmResult | null;
   vlmError: string | null;
+  vlmOpen: boolean;
+  vlmPreviewUrl: string | null;
   evidenceEntries: EvidenceEntry[];
   onChangeVlmModel: (id: VlmModelId) => void;
   onChangeVlmGrounded: (grounded: boolean) => void;
+  onToggleVlmOpen: (open: boolean) => void;
   onRunVlmCheck: (modelId: VlmModelId, grounded: boolean) => void;
   onStopVlm: () => void;
   onApplyEvidence: (entry: EvidenceEntry) => void;
@@ -56,9 +59,12 @@ export function LeadSummary({
   vlmStreamText,
   vlmResult,
   vlmError,
+  vlmOpen,
+  vlmPreviewUrl,
   evidenceEntries,
   onChangeVlmModel,
   onChangeVlmGrounded,
+  onToggleVlmOpen,
   onRunVlmCheck,
   onStopVlm,
   onApplyEvidence,
@@ -96,7 +102,11 @@ export function LeadSummary({
   const vlmActiveText = vlmResult?.text ?? vlmStreamText;
 
   const vlmDisclosure = hasImage ? (
-    <details className="disclosure embedded hero-vlm-disclosure">
+    <details
+      className="disclosure embedded hero-vlm-disclosure"
+      open={vlmOpen}
+      onToggle={(e) => onToggleVlmOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
       <summary>
         <span className="summary-title">Deep VLM clue check (Qwen-VL Q4)</span>
         <span className="summary-preview">{vlmPreview}</span>
@@ -203,10 +213,15 @@ export function LeadSummary({
             </div>
           )}
 
-          {vlmActiveText && (
+          {(vlmActiveText || vlmPreviewUrl) && (
             <div className="vlm-output-card">
               <div className="vlm-meta-row mono">
-                <span>{vlmResult ? vlmResult.modelLabel : selectedVlmSpec.label}</span>
+                <span>
+                  {vlmResult ? vlmResult.modelLabel : selectedVlmSpec.label}
+                  {vlmResult
+                    ? ` · ${vlmResult.isRoiCrop ? 'ROI crop' : 'Full frame'} (${vlmResult.cropWidth}×${vlmResult.cropHeight})`
+                    : ''}
+                </span>
                 {vlmResult ? (
                   <span>
                     {vlmResult.backend.toUpperCase()} · {vlmResult.dtype.toUpperCase()} ·{' '}
@@ -217,7 +232,18 @@ export function LeadSummary({
                   <span>Streaming…</span>
                 )}
               </div>
-              <div className="vlm-output-text">{vlmActiveText}</div>
+              <div className="vlm-output-body">
+                {vlmPreviewUrl && (
+                  <img
+                    src={vlmPreviewUrl}
+                    alt="Crop sent to Qwen-VL"
+                    className="vlm-input-thumb"
+                  />
+                )}
+                <div className="vlm-output-text">
+                  {vlmActiveText || 'Preparing crop for Qwen-VL…'}
+                </div>
+              </div>
               {vlmResult && suggestedClues.length > 0 && (
                 <div className="preset-row" style={{ marginTop: '0.25rem' }}>
                   {suggestedClues.map((clue) => {

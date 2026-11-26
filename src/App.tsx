@@ -27,11 +27,8 @@ import type {
   ExifMetadata,
   LoadProgress,
   ModelBenchmark,
-  OsmPin,
   RoiRect,
   SamplePhoto,
-  SkylineProfile,
-  SolarBandPoint,
   VlmModelId,
   VlmProgress,
   VlmResult,
@@ -81,9 +78,6 @@ export function App() {
   const [gpsRevealed, setGpsRevealed] = useState(false);
 
   const [evidenceEntries, setEvidenceEntries] = useState<EvidenceEntry[]>([]);
-  const [solarBand, setSolarBand] = useState<SolarBandPoint[]>([]);
-  const [osmPins, setOsmPins] = useState<OsmPin[]>([]);
-  const [skyline, setSkyline] = useState<SkylineProfile | null>(null);
 
   const [mode, setMode] = useState<AnalysisMode>('center');
   const [roi, setRoi] = useState<RoiRect>({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
@@ -109,6 +103,8 @@ export function App() {
   const [vlmStreamText, setVlmStreamText] = useState('');
   const [vlmResult, setVlmResult] = useState<VlmResult | null>(null);
   const [vlmError, setVlmError] = useState<string | null>(null);
+  const [vlmOpen, setVlmOpen] = useState(false);
+  const [vlmPreviewUrl, setVlmPreviewUrl] = useState<string | null>(null);
 
   const [copiedBrief, setCopiedBrief] = useState(false);
 
@@ -270,13 +266,11 @@ export function App() {
       setExif(parsedExif);
       setGpsRevealed(false);
       setEvidenceEntries([]);
-      setSolarBand([]);
-      setOsmPins([]);
-      setSkyline(null);
       setVlmResult(null);
       setVlmStreamText('');
       setVlmError(null);
       setVlmProgress(null);
+      setVlmPreviewUrl(null);
 
       if (modelStatus === 'ready') {
         await runAnalysis(bitmap, mode, roi, engineSource);
@@ -379,6 +373,7 @@ export function App() {
   ) => {
     const bmp = activeBitmap;
     if (!bmp || vlmLoading) return;
+    setVlmOpen(true);
     setVlmModelId(targetModelId);
     setVlmGrounded(grounded);
     setVlmLoading(true);
@@ -394,7 +389,8 @@ export function App() {
 
     try {
       const activeRoi = roiOverride ?? (mode === 'roi' ? roi : null);
-      const { data, width, height } = extractVlmImageRgb(bmp, activeRoi, 448);
+      const { data, width, height, previewUrl, isCropped } = extractVlmImageRgb(bmp, activeRoi, 448);
+      setVlmPreviewUrl(previewUrl);
 
       let contextLeadSummary: string | undefined;
       if (grounded && effectiveResult) {
@@ -425,6 +421,7 @@ export function App() {
         width,
         height,
         contextLeadSummary,
+        isRoiCrop: isCropped,
       });
       setVlmResult(vlmOut);
     } catch (err) {
@@ -570,7 +567,6 @@ export function App() {
           imageName={imageName}
           imageBitmap={activeBitmap}
           isMirrored={isMirrored}
-          skyline={skyline}
           samples={samples}
           activeSampleId={activeSampleId}
           mode={mode}
@@ -609,7 +605,6 @@ export function App() {
           }}
           onChangeRoi={setRoi}
           onToggleMirror={handleToggleMirror}
-          onClearSkyline={() => setSkyline(null)}
           onRunAnalysis={(modeOverride, roiOverride) =>
             runAnalysis(activeBitmap ?? undefined, modeOverride, roiOverride)
           }
@@ -629,9 +624,12 @@ export function App() {
             vlmStreamText={vlmStreamText}
             vlmResult={vlmResult}
             vlmError={vlmError}
+            vlmOpen={vlmOpen}
+            vlmPreviewUrl={vlmPreviewUrl}
             evidenceEntries={evidenceEntries}
             onChangeVlmModel={setVlmModelId}
             onChangeVlmGrounded={setVlmGrounded}
+            onToggleVlmOpen={setVlmOpen}
             onRunVlmCheck={(mId, g) => handleRunVlmCheck(mId, g)}
             onStopVlm={handleStopVlm}
             onApplyEvidence={(entry) =>
@@ -649,8 +647,6 @@ export function App() {
                 : effectiveResult?.citiesHierarchical ?? []
             }
             geocell={effectiveResult?.geocell}
-            solarBand={solarBand}
-            osmPins={osmPins}
             svgRef={mapSvgRef}
             selectedCountryCode={selectedCountryCode}
             selectedCity={selectedCity}
@@ -667,7 +663,6 @@ export function App() {
 
           <LeadDisclosures
             result={effectiveResult}
-            exif={exif}
             engineSource={engineSource}
             backendMode={backendMode}
             selectedCountryCode={selectedCountryCode}
@@ -681,9 +676,6 @@ export function App() {
             geocellsSizeLabel={geocellsSizeLabel}
             backend={activeBackend}
             evidenceEntries={evidenceEntries}
-            solarBandCount={solarBand.length}
-            osmPins={osmPins}
-            skyline={skyline}
             onAddEvidence={(entry) =>
               setEvidenceEntries((prev) => [...prev, entry])
             }
@@ -696,10 +688,6 @@ export function App() {
               setEvidenceEntries((prev) => prev.filter((e) => e.id !== id))
             }
             onClearEvidence={() => setEvidenceEntries([])}
-            onPlotSolarBand={setSolarBand}
-            onClearSolarBand={() => setSolarBand([])}
-            onSetOsmPins={setOsmPins}
-            onSetSkyline={setSkyline}
             onChangeEngine={handleChangeEngine}
             onSelectCountry={setSelectedCountryCode}
             onSelectCity={(city) => {

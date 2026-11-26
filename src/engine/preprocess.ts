@@ -120,12 +120,21 @@ export function preprocessRoiCrop(
 /**
  * Extracts a tightly packed RGB image scaled to at most `maxDim` on the longest side,
  * with dimensions rounded to multiples of 32 for bounded Qwen-VL visual token counts.
+ * When an ROI box is supplied, small regions are upscaled up to 2.5x (capped at maxDim)
+ * so street signs and text remain sharp for OCR.
  */
 export function extractVlmImageRgb(
   bitmap: ImageBitmap,
   roi?: RoiRect | null,
   maxDim = 448,
-): { data: Uint8ClampedArray; width: number; height: number } {
+): {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+  previewUrl: string;
+  isCropped: boolean;
+} {
+  const isCropped = Boolean(roi);
   const sx = roi ? Math.max(0, Math.min(bitmap.width - 1, Math.round(roi.x * bitmap.width))) : 0;
   const sy = roi ? Math.max(0, Math.min(bitmap.height - 1, Math.round(roi.y * bitmap.height))) : 0;
   const sw = roi
@@ -135,14 +144,16 @@ export function extractVlmImageRgb(
     ? Math.max(16, Math.min(bitmap.height - sy, Math.round(roi.h * bitmap.height)))
     : bitmap.height;
 
-  const scale = Math.min(1, maxDim / Math.max(sw, sh));
+  const maxUpscale = roi ? 2.5 : 1;
+  const scale = Math.min(maxUpscale, maxDim / Math.max(sw, sh));
   const round32 = (v: number) => Math.max(64, Math.min(maxDim, Math.round((v * scale) / 32) * 32));
   const width = round32(sw);
   const height = round32(sh);
 
-  const { ctx } = createWorkCanvas(width, height);
+  const { canvas, ctx } = createWorkCanvas(width, height);
   ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height);
   const rgba = ctx.getImageData(0, 0, width, height).data;
+  const previewUrl = canvas.toDataURL('image/jpeg', 0.85);
 
   const pixelCount = width * height;
   const data = new Uint8ClampedArray(pixelCount * 3);
@@ -151,7 +162,7 @@ export function extractVlmImageRgb(
     data[q + 1] = rgba[p + 1];
     data[q + 2] = rgba[p + 2];
   }
-  return { data, width, height };
+  return { data, width, height, previewUrl, isCropped };
 }
 
 export interface EdgeCornerCrop {

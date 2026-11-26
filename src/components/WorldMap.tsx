@@ -5,10 +5,8 @@ import worldAtlas from 'world-atlas/countries-110m.json';
 import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import type {
   GeocellPrediction,
-  OsmPin,
   ScoredCity,
   ScoredCountry,
-  SolarBandPoint,
 } from '../engine/types';
 
 interface WorldFeature {
@@ -22,8 +20,6 @@ interface WorldMapProps {
   countries: ScoredCountry[];
   cities: ScoredCity[];
   geocell?: GeocellPrediction | null;
-  solarBand?: SolarBandPoint[];
-  osmPins?: OsmPin[];
   svgRef?: RefObject<SVGSVGElement | null>;
   selectedCountryCode: string | null;
   selectedCity: ScoredCity | null;
@@ -40,8 +36,6 @@ export function WorldMap({
   countries,
   cities,
   geocell,
-  solarBand = [],
-  osmPins = [],
   svgRef,
   selectedCountryCode,
   selectedCity,
@@ -426,67 +420,7 @@ export function WorldMap({
               );
             })()}
 
-            {/* Solar Elevation / Azimuth Match Band */}
-            {solarBand.length > 0 && (
-              <g className="solar-band-layer" style={{ pointerEvents: 'none' }}>
-                {solarBand.map((ptCoord, idx) => {
-                  const pt = projection([ptCoord.lng, ptCoord.lat]);
-                  if (!pt) return null;
-                  return (
-                    <circle
-                      key={`sun-${idx}`}
-                      cx={pt[0]}
-                      cy={pt[1]}
-                      r={5.5 / Math.pow(zoom, 0.55)}
-                      fill="#eab308"
-                      opacity={0.2 + ptCoord.score * 0.45}
-                    />
-                  );
-                })}
-              </g>
-            )}
-
-            {/* OSM Nominatim / Overpass Pins */}
-            {osmPins.map((pin) => {
-              const pt = projection([pin.lng, pin.lat]);
-              if (!pt) return null;
-              const s = 4.6 / zoom;
-              return (
-                <g
-                  key={pin.id}
-                  data-pin="true"
-                  transform={`translate(${pt[0]}, ${pt[1]})`}
-                  style={{ cursor: 'pointer' }}
-                  onMouseEnter={() => setHoverText(`OSM: ${pin.name} (${pin.category})`)}
-                  onMouseLeave={() => setHoverText(null)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    focusPoint(pin.lng, pin.lat, Math.max(zoom, 4.2));
-                  }}
-                >
-                  <polygon
-                    points={`0,${-s} ${s},0 0,${s} ${-s},0`}
-                    fill="#7c3aed"
-                    stroke="#ffffff"
-                    strokeWidth={1.3 / zoom}
-                  />
-                </g>
-              );
-            })}
-
-            {solarBand.length > 0 && (
-            <span className="legend-swatch">
-              <span className="swatch-dot" style={{ background: '#eab308' }} />
-              Solar Band
-            </span>
-          )}
-          {osmPins.length > 0 && (
-            <span className="legend-swatch">
-              <span className="swatch-dot" style={{ background: '#7c3aed' }} />
-              OSM Pins ({osmPins.length})
-            </span>
-          )}
-          {exifGps && (() => {
+            {exifGps && (() => {
               const pt = projection([exifGps.lng, exifGps.lat]);
               if (!pt) return null;
               return (
@@ -566,18 +500,6 @@ export function WorldMap({
             >
               Heatmap: {showHeatmap ? 'On' : 'Off'}
             </button>
-          )}
-          {solarBand.length > 0 && (
-            <span className="legend-swatch">
-              <span className="swatch-dot" style={{ background: '#eab308' }} />
-              Solar Band
-            </span>
-          )}
-          {osmPins.length > 0 && (
-            <span className="legend-swatch">
-              <span className="swatch-dot" style={{ background: '#7c3aed' }} />
-              OSM Pins ({osmPins.length})
-            </span>
           )}
           {exifGps && (
             <span className="legend-swatch">

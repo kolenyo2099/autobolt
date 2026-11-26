@@ -100,6 +100,7 @@ export class VlmClient {
     width: number;
     height: number;
     contextLeadSummary?: string;
+    isRoiCrop?: boolean;
   }): Promise<VlmResult> {
     const copy = new Uint8ClampedArray(params.imageData);
     return this.call(
@@ -110,6 +111,7 @@ export class VlmClient {
         width: params.width,
         height: params.height,
         contextLeadSummary: params.contextLeadSummary,
+        isRoiCrop: Boolean(params.isRoiCrop),
       },
       [copy.buffer],
     );
