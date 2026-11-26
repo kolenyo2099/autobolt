@@ -2,8 +2,8 @@
 
 import * as ort from 'onnxruntime-web/webgpu';
 import {
-  AutoTokenizer,
   CLIPModel,
+  CLIPTokenizer,
   Tensor,
   env as hfEnv,
   type PreTrainedTokenizer,
@@ -489,10 +489,22 @@ async function initEngine(
 
 async function ensureTokenizer(): Promise<PreTrainedTokenizer> {
   if (tokenizer) return tokenizer;
-  hfEnv.allowLocalModels = true;
-  hfEnv.allowRemoteModels = false;
-  hfEnv.localModelPath = resolveAsset('models/');
-  tokenizer = await AutoTokenizer.from_pretrained('tokenizer', { local_files_only: true });
+  const [tokJsonBuf, tokCfgBuf] = await Promise.all([
+    fetchCachedArrayBuffer(
+      resolveAsset('models/tokenizer/tokenizer.json'),
+      'text',
+      'Loading StreetCLIP tokenizer vocabulary',
+    ),
+    fetchCachedArrayBuffer(
+      resolveAsset('models/tokenizer/tokenizer_config.json'),
+      'text',
+      'Loading StreetCLIP tokenizer config',
+    ),
+  ]);
+  const decoder = new TextDecoder();
+  const tokenizerJSON = JSON.parse(decoder.decode(tokJsonBuf));
+  const tokenizerConfig = JSON.parse(decoder.decode(tokCfgBuf));
+  tokenizer = new CLIPTokenizer(tokenizerJSON, tokenizerConfig);
   return tokenizer;
 }
 

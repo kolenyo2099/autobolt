@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -153,12 +153,11 @@ export function LeadDisclosures({
 
   const syncParking = useCallback((idx: number, lockOverflow: boolean) => {
     const track = trackRef.current;
-    if (!track) return;
+    if (!track || track.clientWidth === 0) return;
     const slides = getSlides();
     const targetSlide = slides[idx];
     if (!targetSlide) return;
 
-    const beforeLeft = targetSlide.offsetLeft;
     const prevSnap = track.style.scrollSnapType;
     track.style.scrollSnapType = 'none';
     if (lockOverflow) {
@@ -173,11 +172,9 @@ export function LeadDisclosures({
     currentParkRef.current = idx;
 
     const afterLeft = targetSlide.offsetLeft;
-    if (afterLeft !== beforeLeft) {
-      const prevBeh = track.style.scrollBehavior;
-      track.style.scrollBehavior = 'auto';
-      track.scrollLeft += afterLeft - beforeLeft;
-      track.style.scrollBehavior = prevBeh;
+    if (Math.abs(track.scrollLeft - afterLeft) > 1) {
+      track.scrollTo({ left: afterLeft, behavior: 'instant' });
+      void track.scrollLeft;
     }
 
     track.style.scrollSnapType = prevSnap;
@@ -197,40 +194,51 @@ export function LeadDisclosures({
     if (!track) return;
     hasInteractedRef.current = true;
 
+    const launchScroll = () => {
+      const tr = trackRef.current;
+      if (!tr) return;
+      tr.style.overflowX = '';
+      const slide = Array.from(tr.children)[targetIdx] as HTMLElement | undefined;
+      if (!slide) return;
+      pendingTargetRef.current = targetIdx;
+      expectedTargetPosRef.current = slide.offsetLeft;
+      setActiveIndex(targetIdx);
+
+      const delta = slide.offsetLeft - tr.scrollLeft;
+      if (Math.abs(delta) < 2) {
+        pendingTargetRef.current = null;
+        expectedTargetPosRef.current = null;
+        syncParking(targetIdx, true);
+        settledIndexRef.current = targetIdx;
+        return;
+      }
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      tr.scrollTo({ left: slide.offsetLeft, behavior: reduced ? 'auto' : 'smooth' });
+    };
+
     if (resetOrderForMarker && currentParkRef.current !== -1) {
-      // Reset parking to DOM order without locking overflow so Safari/Chrome smooth-scroll cleanly
-      const anchorSlide = getSlides()[settledIndexRef.current];
-      const beforeLeft = anchorSlide?.offsetLeft ?? 0;
-      const prevSnap = track.style.scrollSnapType;
+      const anchorIdx = getNearestSlideIndex();
+      const anchorSlide = getSlides()[anchorIdx];
+      track.style.overflowX = '';
       track.style.scrollSnapType = 'none';
       track.style.removeProperty('--current');
       currentParkRef.current = -1;
       const afterLeft = anchorSlide?.offsetLeft ?? 0;
-      if (afterLeft !== beforeLeft) {
-        const prevBeh = track.style.scrollBehavior;
-        track.style.scrollBehavior = 'auto';
-        track.scrollLeft += afterLeft - beforeLeft;
-        track.style.scrollBehavior = prevBeh;
-      }
-      track.style.scrollSnapType = prevSnap;
-    }
-
-    const slide = getSlides()[targetIdx];
-    if (!slide) return;
-    pendingTargetRef.current = targetIdx;
-    expectedTargetPosRef.current = slide.offsetLeft;
-    setActiveIndex(targetIdx);
-
-    const delta = slide.offsetLeft - track.scrollLeft;
-    if (Math.abs(delta) < 2) {
-      pendingTargetRef.current = null;
-      expectedTargetPosRef.current = null;
-      syncParking(targetIdx, true);
-      settledIndexRef.current = targetIdx;
+      track.scrollTo({ left: afterLeft, behavior: 'instant' });
+      void track.scrollLeft;
+      setActiveIndex(targetIdx);
+      pendingTargetRef.current = targetIdx;
+      requestAnimationFrame(() => {
+        if (trackRef.current) {
+          trackRef.current.style.scrollSnapType = '';
+        }
+        launchScroll();
+      });
       return;
     }
-    track.scrollBy({ left: delta });
-  }, [syncParking]);
+
+    launchScroll();
+  }, [getNearestSlideIndex, syncParking]);
 
   const handleStep = (dir: -1 | 1) => {
     const track = trackRef.current;
@@ -249,16 +257,27 @@ export function LeadDisclosures({
     scrollToSlide(targetIdx, false);
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const track = trackRef.current;
     if (!track) return;
 
-    if (!CSS.supports('order: sibling-count()')) {
-      track.style.setProperty('--children-count', String(track.children.length));
-    }
+    track.style.setProperty('--children-count', String(track.children.length));
 
-    // Initialize parking on load quietly without announcement
+    // Park initial Slide 1 (index 0) before browser first paint
+    pendingTargetRef.current = 0;
     syncParking(0, false);
+    settledIndexRef.current = 0;
+    setActiveIndex(0);
+    const id = requestAnimationFrame(() => {
+      pendingTargetRef.current = null;
+      hasInteractedRef.current = false;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [syncParking]);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
 
     let rafId = 0;
     let debounceTimer: number | null = null;
@@ -267,20 +286,20 @@ export function LeadDisclosures({
     const handleSettle = () => {
       const idx = getNearestSlideIndex();
 
-      // Guard against stale settle arriving at a position where a new scroll was just launched
-      const slide = getSlides()[idx];
+      // Ignore scrollend events only when scroll is still in flight toward another target
       if (
         pendingTargetRef.current !== null &&
         idx !== pendingTargetRef.current &&
         expectedTargetPosRef.current !== null &&
-        slide &&
-        Math.abs(track.scrollLeft - expectedTargetPosRef.current) > 4
+        Math.abs(track.scrollLeft - expectedTargetPosRef.current) > track.clientWidth * 0.6
       ) {
-        return;
+        // If scroll has actually come to rest on a snapped slide, accept idx cleanly instead of stalling
+        pendingTargetRef.current = null;
+        expectedTargetPosRef.current = null;
+      } else {
+        pendingTargetRef.current = null;
+        expectedTargetPosRef.current = null;
       }
-
-      pendingTargetRef.current = null;
-      expectedTargetPosRef.current = null;
 
       if (currentParkRef.current !== idx) {
         syncParking(idx, pendingStepRef.current === null);

@@ -13,6 +13,7 @@ body {
   margin: 0;
   padding: 0;
   min-block-size: 100dvh;
+  overflow-x: clip;
   background: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-sans);
