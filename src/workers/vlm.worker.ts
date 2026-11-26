@@ -169,11 +169,10 @@ function buildGeoPrompt(contextLeadSummary?: string, isRoiCrop = false): string 
       : '';
     return (
       `${bgBlock}` +
-      `This image is a ZOOMED-IN CROP (ROI) from a larger street photo. Answer concisely in 4 short single-sentence bullets (under 120 words total):\n` +
-      `1. **Crop Subject**: Briefly state what object or scene detail is shown in this crop.\n` +
-      `2. **Verbatim Text & Codes**: Transcribe any legible words, scripts, issuing authority, or phone/area codes (or "None legible").\n` +
-      `3. **Clues**: Note plate colors/shape, road markings, poles, signage style, or mirror-flip cues.\n` +
-      `4. **Assessment**: Country/region/city clue implied by this specific crop.`
+      `This image is a ZOOMED-IN CROP (ROI) from a larger street photo. Analyze what is visible in 3 clear, detailed sections (mark unclear text as "illegible"):\n` +
+      `1. **Crop Subject & Verbatim Text**: Describe the object or sign shown and transcribe any legible words, scripts, numbers, license plate characters, or area codes (or state "None clearly legible").\n` +
+      `2. **Distinctive Visual Clues**: Note plate colors/shape, typography, signage style, road markings, poles, or architectural details.\n` +
+      `3. **Location Assessment**: State what country/region/city this crop points to and how it supports or challenges the candidate leads.`
     );
   }
 
@@ -182,11 +181,10 @@ function buildGeoPrompt(contextLeadSummary?: string, isRoiCrop = false): string 
     : '';
   return (
     `${leadBlock}` +
-    `Answer concisely in 4 short single-sentence bullets (under 140 words total; write "illegible" if unclear):\n` +
-    `1. **Capture**: Platform (street/building/vehicle) and whether text/traffic appears horizontally mirrored.\n` +
-    `2. **Text & Codes**: Quote exact legible signs, scripts, issuing authorities, or phone/area codes.\n` +
-    `3. **Road & Scene**: Driving side, plate style, utility poles/bollards, architecture, and climate.\n` +
-    `4. **Assessment**: Best city/region/country call and whether visual evidence confirms or challenges the leads.`
+    `Analyze this street-level photo for geolocation clues in 3 clear, detailed sections (mark unclear text as "illegible"):\n` +
+    `1. **Visible Text, Scripts & Codes**: Quote readable street signs, shopfronts, language/script, area or phone codes, and license plate style/colors (or state "None clearly legible").\n` +
+    `2. **Distinctive Road & Scene Clues**: Describe architecture, utility poles/bollards, streetlights, road markings, vehicles, driving side, vegetation, and climate.\n` +
+    `3. **Location Assessment**: State your best city/region/country call, explain how the visual clues support it, and note whether they confirm or challenge the candidate leads.`
   );
 }
 
@@ -262,8 +260,10 @@ self.onmessage = async (event: MessageEvent) => {
 
       const outputs = await loadedModel.generate({
         ...inputs,
-        max_new_tokens: 512,
+        max_new_tokens: 960,
         do_sample: false,
+        repetition_penalty: 1.12,
+        no_repeat_ngram_size: 6,
         streamer,
       });
 
