@@ -6,8 +6,10 @@ import { WorldMap } from './components/WorldMap';
 import { LeadDisclosures } from './components/LeadDisclosures';
 import { ModelDialog } from './components/ModelDialog';
 import { StreetClipClient } from './engine/client';
+import { VlmClient } from './engine/vlmClient';
 import { extractImageExif } from './engine/exif';
 import {
+  extractVlmImageRgb,
   preprocessCenterCrop,
   preprocessMultiCrop,
   preprocessRoiCrop,
@@ -24,6 +26,9 @@ import type {
   ModelBenchmark,
   RoiRect,
   SamplePhoto,
+  VlmModelId,
+  VlmProgress,
+  VlmResult,
 } from './engine/types';
 import { buildMarkdownBrief, downloadJsonBrief } from './utils/exportBrief';
 
@@ -80,6 +85,16 @@ export function App() {
   const [probeLoading, setProbeLoading] = useState(false);
   const [probeProgressMsg, setProbeProgressMsg] = useState<string | null>(null);
   const [probeProgressRatio, setProbeProgressRatio] = useState<number | null>(null);
+
+  const vlmClientRef = useRef<VlmClient | null>(null);
+  const [vlmModelId, setVlmModelId] = useState<VlmModelId>('qwen35-0.8b');
+  const [vlmGrounded, setVlmGrounded] = useState(true);
+  const [vlmLoading, setVlmLoading] = useState(false);
+  const [vlmProgress, setVlmProgress] = useState<VlmProgress | null>(null);
+  const [vlmStreamText, setVlmStreamText] = useState('');
+  const [vlmResult, setVlmResult] = useState<VlmResult | null>(null);
+  const [vlmError, setVlmError] = useState<string | null>(null);
+
   const [copiedBrief, setCopiedBrief] = useState(false);
 
   useEffect(() => {
@@ -140,6 +155,8 @@ export function App() {
       unsub();
       client.dispose();
       clientRef.current = null;
+      vlmClientRef.current?.cancel();
+      vlmClientRef.current = null;
     };
   }, [initWorkerEngine]);
 
@@ -222,6 +239,10 @@ export function App() {
       });
       setExif(parsedExif);
       setGpsRevealed(false);
+      setVlmResult(null);
+      setVlmStreamText('');
+      setVlmError(null);
+      setVlmProgress(null);
 
       if (modelStatus === 'ready') {
         await runAnalysis(bitmap, mode, roi, engineSource);
@@ -271,13 +292,95 @@ export function App() {
   };
 
   const handleClearCache = async () => {
-    await clientRef.current?.clearCache();
+    await Promise.all([
+      clientRef.current?.clearCache(),
+      vlmClientRef.current?.clearCache(),
+    ]);
     setLoadProgress({
       stage: 'ready',
       message: 'Browser model cache cleared.',
       loadedBytes: 1,
       totalBytes: 1,
     });
+  };
+
+  const getVlmClient = () => {
+    if (!vlmClientRef.current) {
+      const vc = new VlmClient();
+      vc.onProgress((prog) => setVlmProgress(prog));
+      vc.onToken(({ text }) => setVlmStreamText(text));
+      vlmClientRef.current = vc;
+    }
+    return vlmClientRef.current;
+  };
+
+  const handleRunVlmCheck = async (targetModelId: VlmModelId, grounded: boolean) => {
+    if (!imageBitmap || vlmLoading) return;
+    setVlmModelId(targetModelId);
+    setVlmGrounded(grounded);
+    setVlmLoading(true);
+    setVlmError(null);
+    setVlmResult(null);
+    setVlmStreamText('');
+    setVlmProgress({
+      stage: 'loading',
+      message: 'Preparing quantized Qwen-VL runtime…',
+      loadedBytes: 0,
+      totalBytes: 0,
+    });
+
+    try {
+      const { data, width, height } = extractVlmImageRgb(
+        imageBitmap,
+        mode === 'roi' ? roi : null,
+        448,
+      );
+
+      let contextLeadSummary: string | undefined;
+      if (grounded && result) {
+        const topCountries = result.countries
+          .slice(0, 3)
+          .map((c) => `${c.name} (${(c.prob * 100).toFixed(0)}%)`)
+          .join(', ');
+        const topCities = result.citiesHierarchical
+          .slice(0, 3)
+          .map((c) => `${c.name}, ${c.region}`)
+          .join(' | ');
+        const coordLine = result.geocell
+          ? `Estimated coords: ${result.geocell.lat.toFixed(2)}, ${result.geocell.lng.toFixed(2)}`
+          : '';
+        contextLeadSummary = [
+          topCountries ? `Top countries: ${topCountries}` : '',
+          topCities ? `Top cities: ${topCities}` : '',
+          coordLine,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      }
+
+      const vc = getVlmClient();
+      const vlmOut = await vc.analyze({
+        modelId: targetModelId,
+        imageData: data,
+        width,
+        height,
+        contextLeadSummary,
+      });
+      setVlmResult(vlmOut);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('cancelled')) {
+        setVlmError(msg);
+      }
+    } finally {
+      setVlmLoading(false);
+    }
+  };
+
+  const handleStopVlm = () => {
+    vlmClientRef.current?.cancel();
+    setVlmLoading(false);
+    setVlmProgress(null);
   };
 
   const handleRunCustomProbe = async (labels: string[], useStreetTemplate: boolean) => {
@@ -304,7 +407,7 @@ export function App() {
 
   const handleCopyBrief = async () => {
     if (!result) return;
-    const md = buildMarkdownBrief(result, imageName, exif, gpsRevealed);
+    const md = buildMarkdownBrief(result, imageName, exif, gpsRevealed, vlmResult);
     await navigator.clipboard.writeText(md);
     setCopiedBrief(true);
     setTimeout(() => setCopiedBrief(false), 2000);
@@ -344,7 +447,7 @@ export function App() {
         copiedBrief={copiedBrief}
         onChangeEngine={handleChangeEngine}
         onCopyBrief={handleCopyBrief}
-        onDownloadJson={() => result && downloadJsonBrief(result, imageName)}
+        onDownloadJson={() => result && downloadJsonBrief(result, imageName, vlmResult)}
       />
 
       {(modelStatus === 'loading' || errorMsg) && (
@@ -466,6 +569,18 @@ export function App() {
               setFocusTarget({ points: [{ lat, lng }], seq: Date.now() })
             }
             onRunCustomProbe={handleRunCustomProbe}
+            hasImage={Boolean(imageBitmap)}
+            vlmModelId={vlmModelId}
+            vlmGrounded={vlmGrounded}
+            vlmLoading={vlmLoading}
+            vlmProgress={vlmProgress}
+            vlmStreamText={vlmStreamText}
+            vlmResult={vlmResult}
+            vlmError={vlmError}
+            onChangeVlmModel={setVlmModelId}
+            onChangeVlmGrounded={setVlmGrounded}
+            onRunVlmCheck={handleRunVlmCheck}
+            onStopVlm={handleStopVlm}
           />
         </div>
       </main>

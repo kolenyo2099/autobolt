@@ -116,6 +116,14 @@ export function ModelDialog({
                   {benchmark.textQuantization.minCosineSimilarityVsFp32.toFixed(4)}
                 </td>
               </tr>
+              <tr className="highlight-row">
+                <td>Deep VLM Clue Check (Qwen3.5 0.8B / 2B Q4F16)</td>
+                <td className="mono">~615 MB – 1.51 GB</td>
+                <td className="mono">Lazy-loaded (HF CDN)</td>
+                <td>
+                  Split vision + embed + merged decoder Q4F16 on WebGPU for sign OCR &amp; clue verification
+                </td>
+              </tr>
             </tbody>
           </table>
         )}

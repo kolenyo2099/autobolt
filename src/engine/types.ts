@@ -275,3 +275,35 @@ export interface LoadProgress {
   totalBytes: number;
   cached?: boolean;
 }
+
+export type VlmModelId = 'qwen35-0.8b' | 'qwen3-vl-2b' | 'qwen35-2b';
+
+export interface VlmModelSpec {
+  id: VlmModelId;
+  label: string;
+  repoId: string;
+  approxSizeLabel: string;
+  enableThinkingFlag: boolean;
+  notes: string;
+}
+
+export interface VlmProgress {
+  stage: 'downloading' | 'loading' | 'generating' | 'ready';
+  message: string;
+  file?: string;
+  loadedBytes: number;
+  totalBytes: number;
+  percent?: number;
+}
+
+export interface VlmResult {
+  modelId: VlmModelId;
+  modelLabel: string;
+  backend: ActiveBackend;
+  dtype: 'q4f16' | 'q4';
+  text: string;
+  latencyMs: number;
+  tokenCount: number;
+  tokensPerSec: number;
+  groundedWithLeads: boolean;
+}

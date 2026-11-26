@@ -1,4 +1,4 @@
-import type { AnalysisResult, ExifMetadata } from '../engine/types';
+import type { AnalysisResult, ExifMetadata, VlmResult } from '../engine/types';
 import { haversineDistanceKm } from '../engine/exif';
 
 export function buildMarkdownBrief(
@@ -6,6 +6,7 @@ export function buildMarkdownBrief(
   imageName: string,
   exif: ExifMetadata | null,
   gpsRevealed: boolean,
+  vlmResult?: VlmResult | null,
 ): string {
   const topCountries = result.countries.slice(0, 5);
   const topRegions = result.regionsHierarchical.slice(0, 5);
@@ -70,10 +71,24 @@ export function buildMarkdownBrief(
     );
   }
 
+  if (vlmResult?.text) {
+    lines.push(
+      ``,
+      `## Deep VLM Clue Check (${vlmResult.modelLabel})`,
+      `- **Runtime:** ${vlmResult.backend.toUpperCase()} (${vlmResult.dtype.toUpperCase()}, ${(vlmResult.latencyMs / 1000).toFixed(1)} s, ${vlmResult.tokensPerSec.toFixed(1)} tok/s)`,
+      ``,
+      vlmResult.text,
+    );
+  }
+
   return lines.join('\n');
 }
 
-export function downloadJsonBrief(result: AnalysisResult, imageName: string): void {
+export function downloadJsonBrief(
+  result: AnalysisResult,
+  imageName: string,
+  vlmResult?: VlmResult | null,
+): void {
   const payload = {
     image: imageName,
     generatedAt: new Date().toISOString(),
@@ -100,6 +115,7 @@ export function downloadJsonBrief(result: AnalysisResult, imageName: string): vo
       title: a.title,
       topLeads: a.items.slice(0, 4),
     })),
+    vlmClueCheck: vlmResult ?? undefined,
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });

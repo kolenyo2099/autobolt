@@ -116,3 +116,40 @@ export function preprocessRoiCrop(
   const imageData = ctx.getImageData(0, 0, size, size);
   return rgbaToClipTensor(imageData.data, size);
 }
+
+/**
+ * Extracts a tightly packed RGB image scaled to at most `maxDim` on the longest side,
+ * with dimensions rounded to multiples of 32 for bounded Qwen-VL visual token counts.
+ */
+export function extractVlmImageRgb(
+  bitmap: ImageBitmap,
+  roi?: RoiRect | null,
+  maxDim = 448,
+): { data: Uint8ClampedArray; width: number; height: number } {
+  const sx = roi ? Math.max(0, Math.min(bitmap.width - 1, Math.round(roi.x * bitmap.width))) : 0;
+  const sy = roi ? Math.max(0, Math.min(bitmap.height - 1, Math.round(roi.y * bitmap.height))) : 0;
+  const sw = roi
+    ? Math.max(16, Math.min(bitmap.width - sx, Math.round(roi.w * bitmap.width)))
+    : bitmap.width;
+  const sh = roi
+    ? Math.max(16, Math.min(bitmap.height - sy, Math.round(roi.h * bitmap.height)))
+    : bitmap.height;
+
+  const scale = Math.min(1, maxDim / Math.max(sw, sh));
+  const round32 = (v: number) => Math.max(64, Math.min(maxDim, Math.round((v * scale) / 32) * 32));
+  const width = round32(sw);
+  const height = round32(sh);
+
+  const { ctx } = createWorkCanvas(width, height);
+  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height);
+  const rgba = ctx.getImageData(0, 0, width, height).data;
+
+  const pixelCount = width * height;
+  const data = new Uint8ClampedArray(pixelCount * 3);
+  for (let i = 0, p = 0, q = 0; i < pixelCount; i++, p += 4, q += 3) {
+    data[q] = rgba[p];
+    data[q + 1] = rgba[p + 1];
+    data[q + 2] = rgba[p + 2];
+  }
+  return { data, width, height };
+}

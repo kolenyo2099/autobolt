@@ -20,6 +20,7 @@
   - **Interactive SVG Vector World Map** (`d3-geo` Natural Earth + `world-atlas` TopoJSON) with country probability choropleth, top city pins, zoom/pan, and great-circle geodesic line to revealed EXIF GPS.
   - **EXIF Blind Ground-Truth Check** via `exifr` (camera metadata + hidden GPS spoiler with Haversine km accuracy check).
   - **Custom Hypothesis Probe** tab with lazy-loaded quantized Text Q4 encoder + local CLIP tokenizer.
+  - **Deep VLM Clue Check (Qwen-VL Q4F16)**: On-demand browser WebGPU check using `Qwen3.5 0.8B` / `Qwen3-VL 2B` / `Qwen3.5 2B` (`onnx-community/*-ONNX*`) for sign OCR and multi-clue verification, cached cleanly in Browser Cache API.
   - **Markdown & JSON Lead Brief Export**.
 
 ## Model Quantization Benchmark
