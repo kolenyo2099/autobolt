@@ -153,3 +153,54 @@ export function extractVlmImageRgb(
   }
   return { data, width, height };
 }
+
+export interface EdgeCornerCrop {
+  id: string;
+  label: string;
+  roi: RoiRect;
+  dataUrl: string;
+}
+
+/**
+ * Produces a horizontally mirrored ImageBitmap (useful for flipped street/dashcam reposts).
+ */
+export async function flipBitmapHorizontal(bitmap: ImageBitmap): Promise<ImageBitmap> {
+  const { canvas, ctx } = createWorkCanvas(bitmap.width, bitmap.height);
+  ctx.translate(bitmap.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(bitmap, 0, 0);
+  return createImageBitmap(canvas);
+}
+
+/**
+ * Generates 8 zoomed edge & corner crops matching geo-sleuth's edge-scan habit
+ * so analysts can inspect overlooked signs, plates, poles, and corners.
+ */
+export function generateEdgeCornerCrops(bitmap: ImageBitmap): EdgeCornerCrop[] {
+  const defs: Array<{ id: string; label: string; roi: RoiRect }> = [
+    { id: 'tl', label: 'Top-Left Corner', roi: { x: 0, y: 0, w: 0.34, h: 0.34 } },
+    { id: 't', label: 'Top Edge', roi: { x: 0.33, y: 0, w: 0.34, h: 0.32 } },
+    { id: 'tr', label: 'Top-Right Corner', roi: { x: 0.66, y: 0, w: 0.34, h: 0.34 } },
+    { id: 'l', label: 'Left Edge', roi: { x: 0, y: 0.33, w: 0.34, h: 0.34 } },
+    { id: 'r', label: 'Right Edge', roi: { x: 0.66, y: 0.33, w: 0.34, h: 0.34 } },
+    { id: 'bl', label: 'Bottom-Left Corner', roi: { x: 0, y: 0.66, w: 0.34, h: 0.34 } },
+    { id: 'b', label: 'Bottom Edge', roi: { x: 0.33, y: 0.68, w: 0.34, h: 0.32 } },
+    { id: 'br', label: 'Bottom-Right Corner', roi: { x: 0.66, y: 0.66, w: 0.34, h: 0.34 } },
+  ];
+
+  const thumbSize = 180;
+  const { canvas, ctx } = createWorkCanvas(thumbSize, thumbSize);
+
+  return defs.map((def) => {
+    const sx = Math.round(def.roi.x * bitmap.width);
+    const sy = Math.round(def.roi.y * bitmap.height);
+    const sw = Math.max(8, Math.round(def.roi.w * bitmap.width));
+    const sh = Math.max(8, Math.round(def.roi.h * bitmap.height));
+    ctx.clearRect(0, 0, thumbSize, thumbSize);
+    ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, thumbSize, thumbSize);
+    return {
+      ...def,
+      dataUrl: canvas.toDataURL('image/jpeg', 0.88),
+    };
+  });
+}

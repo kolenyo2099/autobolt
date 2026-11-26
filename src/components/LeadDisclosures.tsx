@@ -7,18 +7,29 @@ import {
   Crosshair,
   Layers,
 } from 'lucide-react';
+import {
+  ClueBoardPanel,
+  OsmTerrainPanel,
+  SunGeometryPanel,
+} from './VerificationPanels';
 import type {
   ActiveBackend,
   AnalysisResult,
   BackendMode,
   CustomProbeResult,
   EngineSource,
+  EvidenceEntry,
+  ExifMetadata,
+  OsmPin,
   ScoredCity,
   ScoredCountry,
+  SkylineProfile,
+  SolarBandPoint,
 } from '../engine/types';
 
 interface LeadDisclosuresProps {
   result: AnalysisResult | null;
+  exif: ExifMetadata | null;
   engineSource: EngineSource;
   backendMode: BackendMode;
   selectedCountryCode: string | null;
@@ -31,6 +42,18 @@ interface LeadDisclosuresProps {
   osv5mSizeLabel: string;
   geocellsSizeLabel: string;
   backend: ActiveBackend;
+  evidenceEntries: EvidenceEntry[];
+  solarBandCount: number;
+  osmPins: OsmPin[];
+  skyline: SkylineProfile | null;
+  onAddEvidence: (entry: EvidenceEntry) => void;
+  onToggleEvidence: (id: string) => void;
+  onRemoveEvidence: (id: string) => void;
+  onClearEvidence: () => void;
+  onPlotSolarBand: (points: SolarBandPoint[]) => void;
+  onClearSolarBand: () => void;
+  onSetOsmPins: (pins: OsmPin[]) => void;
+  onSetSkyline: (profile: SkylineProfile | null) => void;
   onChangeEngine: (source: EngineSource, backend: BackendMode) => void;
   onSelectCountry: (code: string | null) => void;
   onSelectCity: (city: ScoredCity) => void;
@@ -66,6 +89,7 @@ const PROBE_PRESETS = [
 
 export function LeadDisclosures({
   result,
+  exif,
   engineSource,
   backendMode,
   selectedCountryCode,
@@ -78,6 +102,18 @@ export function LeadDisclosures({
   osv5mSizeLabel,
   geocellsSizeLabel,
   backend,
+  evidenceEntries,
+  solarBandCount,
+  osmPins,
+  skyline,
+  onAddEvidence,
+  onToggleEvidence,
+  onRemoveEvidence,
+  onClearEvidence,
+  onPlotSolarBand,
+  onClearSolarBand,
+  onSetOsmPins,
+  onSetSkyline,
   onChangeEngine,
   onSelectCountry,
   onSelectCity,
@@ -631,7 +667,73 @@ export function LeadDisclosures({
           </div>
         </details>
 
-        {/* 4. Runtime & quantization details */}
+        {/* 4. Clue lookup & Bayesian evidence board */}
+        <details className="disclosure" onToggle={syncAllExpanded}>
+          <summary>
+            <span className="summary-title">Clue lookup &amp; evidence board</span>
+            <span className="summary-preview">
+              {evidenceEntries.filter((e) => e.active).length > 0
+                ? `${evidenceEntries.filter((e) => e.active).length} active clue${evidenceEntries.filter((e) => e.active).length > 1 ? 's' : ''}`
+                : 'Calling codes, driving side, plates'}
+            </span>
+          </summary>
+          <div className="disclosure-body">
+            <ClueBoardPanel
+              result={result}
+              evidenceEntries={evidenceEntries}
+              onAddEvidence={onAddEvidence}
+              onToggleEvidence={onToggleEvidence}
+              onRemoveEvidence={onRemoveEvidence}
+              onClearEvidence={onClearEvidence}
+            />
+          </div>
+        </details>
+
+        {/* 5. Sun, shadow & chronolocation */}
+        <details className="disclosure" onToggle={syncAllExpanded}>
+          <summary>
+            <span className="summary-title">Sun, shadow &amp; chronolocation</span>
+            <span className="summary-preview">
+              {solarBandCount > 0 ? `${solarBandCount} band pts plotted` : 'NOAA solar angle & time check'}
+            </span>
+          </summary>
+          <div className="disclosure-body">
+            <SunGeometryPanel
+              result={result}
+              exif={exif}
+              solarBandCount={solarBandCount}
+              onPlotSolarBand={onPlotSolarBand}
+              onClearSolarBand={onClearSolarBand}
+            />
+          </div>
+        </details>
+
+        {/* 6. Verify with OSM & 3D terrain skyline */}
+        <details className="disclosure" onToggle={syncAllExpanded}>
+          <summary>
+            <span className="summary-title">Verify with OSM &amp; 3D terrain skyline</span>
+            <span className="summary-preview">
+              {skyline
+                ? `Skyline ${skyline.headingDeg}°`
+                : osmPins.length > 0
+                  ? `${osmPins.length} OSM pins`
+                  : 'Nominatim, Overpass & DEM horizon'}
+            </span>
+          </summary>
+          <div className="disclosure-body">
+            <OsmTerrainPanel
+              result={result}
+              exif={exif}
+              osmPins={osmPins}
+              skyline={skyline}
+              onSetOsmPins={onSetOsmPins}
+              onFocusCoords={onFocusCoords}
+              onSetSkyline={onSetSkyline}
+            />
+          </div>
+        </details>
+
+        {/* 7. Runtime & quantization details */}
         <details className="disclosure" onToggle={syncAllExpanded}>
           <summary>
             <span className="summary-title">Runtime &amp; quantization details</span>

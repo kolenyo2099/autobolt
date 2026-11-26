@@ -501,6 +501,8 @@ export function scoreOsv5mOutputs(
     visualAxes: [],
     confidence: {
       tier,
+      levels: computeConfidenceLevels(countries, regionsHierarchical, citiesHierarchical),
+      bimodalWarning: detectBimodalHotspots(geocell),
       entropyNormalized,
       top1Margin,
       top1Prob,
@@ -514,10 +516,61 @@ export function scoreOsv5mOutputs(
   };
 }
 
-function buildConfidenceSummary(
+export function computeConfidenceLevels(
   countries: ScoredCountry[],
+  regionsHierarchical: ScoredRegion[],
+  citiesHierarchical: ScoredCity[],
+): ConfidenceSummary['levels'] {
+  const c1 = countries[0]?.prob ?? 0;
+  const c2 = countries[1]?.prob ?? 0;
+  const cMargin = Math.max(0, c1 - c2);
+  const country: ConfidenceSummary['levels']['country'] =
+    c1 >= 0.72 && cMargin >= 0.35
+      ? 'High'
+      : c1 >= 0.4 || cMargin >= 0.15
+        ? 'Medium'
+        : 'Low';
+
+  const r1 = regionsHierarchical[0]?.hierarchicalProb ?? 0;
+  const r2 = regionsHierarchical[1]?.hierarchicalProb ?? 0;
+  const rMargin = Math.max(0, r1 - r2);
+  const region: ConfidenceSummary['levels']['region'] =
+    r1 >= 0.45 && rMargin >= 0.18 ? 'High' : r1 >= 0.2 ? 'Medium' : 'Low';
+
+  const ci1 = citiesHierarchical[0]?.hierarchicalProb ?? 0;
+  const ci2 = citiesHierarchical[1]?.hierarchicalProb ?? 0;
+  const ciMargin = Math.max(0, ci1 - ci2);
+  const city: ConfidenceSummary['levels']['city'] =
+    ci1 >= 0.35 && ciMargin >= 0.14 ? 'High' : ci1 >= 0.14 ? 'Medium' : 'Low';
+
+  return { country, region, city };
+}
+
+export function detectBimodalHotspots(
+  geocell?: GeocellPrediction,
+): ConfidenceSummary['bimodalWarning'] | undefined {
+  if (!geocell || geocell.hotspots.length < 2) return undefined;
+  const [h0, h1] = geocell.hotspots;
+  if (h1.prob < 0.35 * h0.prob) return undefined;
+  const sep = haversineKm(h0.lat, h0.lng, h1.lat, h1.lng);
+  if (sep < 250) return undefined;
+  const label = (h: GeocellHotspot) =>
+    h.nearestCity
+      ? `${h.nearestCity}, ${h.nearestCountry ?? ''}`.trim().replace(/,$/, '')
+      : `${h.lat.toFixed(1)}°, ${h.lng.toFixed(1)}°`;
+  return {
+    hotspotA: label(h0),
+    hotspotB: label(h1),
+    separationKm: Math.round(sep),
+  };
+}
+
+export function buildConfidenceSummary(
+  countries: ScoredCountry[],
+  regionsHierarchical: ScoredRegion[],
   citiesHierarchical: ScoredCity[],
   visualAxes: ScoredVisualAxis[],
+  geocell?: GeocellPrediction,
 ): ConfidenceSummary {
   const n = countries.length;
   let entropy = 0;
@@ -540,6 +593,9 @@ function buildConfidenceSummary(
     tier = 'Moderate Lead';
   }
 
+  const levels = computeConfidenceLevels(countries, regionsHierarchical, citiesHierarchical);
+  const bimodalWarning = detectBimodalHotspots(geocell);
+
   const topCountry = countries[0];
   const topCity = citiesHierarchical[0];
   const envCue = visualAxes.find((a) => a.id === 'environment')?.topItem.label.toLowerCase();
@@ -561,6 +617,8 @@ function buildConfidenceSummary(
 
   return {
     tier,
+    levels,
+    bimodalWarning,
     entropyNormalized,
     top1Margin,
     top1Prob,
@@ -742,7 +800,13 @@ export function scoreImageEmbedding(
     };
   }
 
-  const confidence = buildConfidenceSummary(countries, citiesHierarchical, visualAxes);
+  const confidence = buildConfidenceSummary(
+    countries,
+    regionsHierarchical,
+    citiesHierarchical,
+    visualAxes,
+    geocell,
+  );
 
   return {
     imageEmbed,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Upload,
   Crop,
@@ -8,14 +8,28 @@ import {
   EyeOff,
   MapPin,
   RefreshCw,
+  FlipHorizontal2,
+  Grid2x2,
+  ScanText,
+  X,
 } from 'lucide-react';
-import type { AnalysisMode, ExifMetadata, RoiRect, SamplePhoto } from '../engine/types';
+import type {
+  AnalysisMode,
+  ExifMetadata,
+  RoiRect,
+  SamplePhoto,
+  SkylineProfile,
+  VlmModelId,
+} from '../engine/types';
 import { haversineDistanceKm } from '../engine/exif';
+import { generateEdgeCornerCrops } from '../engine/preprocess';
 
 interface ImageWorkbenchProps {
   imageUrl: string | null;
   imageName: string;
   imageBitmap: ImageBitmap | null;
+  isMirrored: boolean;
+  skyline: SkylineProfile | null;
   samples: SamplePhoto[];
   activeSampleId: string | null;
   mode: AnalysisMode;
@@ -25,11 +39,17 @@ interface ImageWorkbenchProps {
   topCityCoords: { name: string; lat: number; lng: number } | null;
   analyzing: boolean;
   modelReady: boolean;
+  vlmLoading: boolean;
+  vlmModelId: VlmModelId;
+  vlmGrounded: boolean;
   onSelectFile: (file: File) => void;
   onSelectSample: (sample: SamplePhoto) => void;
   onChangeMode: (mode: AnalysisMode) => void;
   onChangeRoi: (roi: RoiRect) => void;
-  onRunAnalysis: () => void;
+  onToggleMirror: () => void;
+  onClearSkyline: () => void;
+  onRunAnalysis: (modeOverride?: AnalysisMode, roiOverride?: RoiRect) => void;
+  onRunVlmOnRoi: (modelId: VlmModelId, grounded: boolean, roiOverride: RoiRect) => void;
   onToggleRevealGps: () => void;
 }
 
@@ -49,6 +69,8 @@ export function ImageWorkbench({
   imageUrl,
   imageName,
   imageBitmap,
+  isMirrored,
+  skyline,
   samples,
   activeSampleId,
   mode,
@@ -58,17 +80,29 @@ export function ImageWorkbench({
   topCityCoords,
   analyzing,
   modelReady,
+  vlmLoading,
+  vlmModelId,
+  vlmGrounded,
   onSelectFile,
   onSelectSample,
   onChangeMode,
   onChangeRoi,
+  onToggleMirror,
+  onClearSkyline,
   onRunAnalysis,
+  onRunVlmOnRoi,
   onToggleRevealGps,
 }: ImageWorkbenchProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [drawingStart, setDrawingStart] = useState<{ x: number; y: number } | null>(null);
+  const [edgesOpen, setEdgesOpen] = useState(false);
+
+  const edgeCrops = useMemo(() => {
+    if (!edgesOpen || !imageBitmap) return [];
+    return generateEdgeCornerCrops(imageBitmap);
+  }, [edgesOpen, imageBitmap]);
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -153,6 +187,8 @@ export function ImageWorkbench({
             {imageBitmap && (
               <span className="photo-dims mono">
                 {imageBitmap.width}×{imageBitmap.height}
+                {isMirrored ? ' · Mirrored' : ''}
+                {exif?.hfovDeg ? ` · ~${Math.round(exif.hfovDeg)}° HFOV` : ''}
               </span>
             )}
           </div>
@@ -199,8 +235,53 @@ export function ImageWorkbench({
                 src={imageUrl}
                 alt={`Evidence photo: ${imageName}`}
                 className="stage-photo"
+                style={isMirrored ? { transform: 'scaleX(-1)' } : undefined}
                 decoding="async"
               />
+              {skyline && skyline.samples.length > 1 && (() => {
+                const vf = (skyline.hfovDeg * 3) / 4;
+                const yOfElev = (deg: number) => {
+                  const yNorm = 0.5 - (deg - skyline.pitchDeg) / Math.max(12, vf);
+                  return Math.max(2, Math.min(98, yNorm * 100));
+                };
+                const pts = skyline.samples
+                  .map((s) => `${(s.xNorm * 100).toFixed(2)},${yOfElev(s.elevDeg).toFixed(2)}`)
+                  .join(' ');
+                const hY = yOfElev(0);
+                return (
+                  <div className="skyline-overlay" aria-label="3D terrain skyline overlay">
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="skyline-svg">
+                      <line
+                        x1="0"
+                        y1={hY}
+                        x2="100"
+                        y2={hY}
+                        stroke="rgba(255,255,255,0.5)"
+                        strokeWidth="0.45"
+                        strokeDasharray="1.5 1.5"
+                      />
+                      <polyline
+                        fill="none"
+                        stroke="#f59e0b"
+                        strokeWidth="1.15"
+                        vectorEffect="non-scaling-stroke"
+                        points={pts}
+                      />
+                    </svg>
+                    <button
+                      type="button"
+                      className="skyline-badge"
+                      onClick={onClearSkyline}
+                      title="Dismiss DEM terrain skyline overlay"
+                    >
+                      <span>
+                        DEM Skyline · Hdg {skyline.headingDeg}° · Max {skyline.maxElevDeg.toFixed(1)}°
+                      </span>
+                      <X size={12} aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })()}
               {mode === 'roi' && (
                 <div
                   className="roi-overlay"
@@ -243,7 +324,7 @@ export function ImageWorkbench({
               type="button"
               className="btn btn-sm btn-primary"
               disabled={!imageBitmap || !modelReady || analyzing}
-              onClick={onRunAnalysis}
+              onClick={() => onRunAnalysis()}
             >
               <RefreshCw size={13} aria-hidden="true" />
               <span>{analyzing ? 'Analyzing…' : 'Analyze ROI'}</span>
@@ -316,15 +397,29 @@ export function ImageWorkbench({
               </button>
             </div>
 
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              disabled={!imageBitmap || !modelReady || analyzing}
-              onClick={onRunAnalysis}
-            >
-              <RefreshCw size={13} aria-hidden="true" />
-              <span>{analyzing ? 'Analyzing…' : mode === 'roi' ? 'Analyze ROI' : 'Re-analyze'}</span>
-            </button>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                aria-pressed={isMirrored}
+                disabled={!imageBitmap || analyzing}
+                onClick={onToggleMirror}
+                title="Flip horizontally if video/photo looks mirrored"
+              >
+                <FlipHorizontal2 size={13} aria-hidden="true" />
+                <span>{isMirrored ? 'Unflip' : 'Mirror Flip'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={!imageBitmap || !modelReady || analyzing}
+                onClick={() => onRunAnalysis()}
+              >
+                <RefreshCw size={13} aria-hidden="true" />
+                <span>{analyzing ? 'Analyzing…' : mode === 'roi' ? 'Analyze ROI' : 'Re-analyze'}</span>
+              </button>
+            </div>
           </div>
           <p style={{ margin: '0.55rem 0 0', fontSize: '0.79rem', color: 'var(--text-secondary)' }}>
             {MODE_DESCRIPTIONS[mode]}
@@ -332,7 +427,65 @@ export function ImageWorkbench({
         </div>
       </details>
 
-      {/* Secondary control 2: Camera & EXIF metadata */}
+      {/* Secondary control 2: Inspect edges & sign zoom */}
+      <details
+        className="disclosure embedded"
+        onToggle={(e) => setEdgesOpen((e.currentTarget as HTMLDetailsElement).open)}
+      >
+        <summary>
+          <span className="summary-title">Inspect edges &amp; sign zoom</span>
+          <span className="summary-preview">8 zoomed corners &amp; edges</span>
+        </summary>
+        <div className="disclosure-body">
+          <p style={{ margin: '0.35rem 0 0.55rem', fontSize: '0.79rem', color: 'var(--text-secondary)' }}>
+            Corners and edges hide small signs, license plates, and bollards. Click any tile to select it as Focus ROI, or send it straight to Qwen-VL for full-detail OCR.
+          </p>
+          {edgeCrops.length > 0 ? (
+            <div className="edge-crops-grid">
+              {edgeCrops.map((crop) => (
+                <div key={crop.id} className="edge-crop-card">
+                  <button
+                    type="button"
+                    className="edge-crop-img-btn"
+                    onClick={() => {
+                      onChangeMode('roi');
+                      onChangeRoi(crop.roi);
+                      onRunAnalysis('roi', crop.roi);
+                    }}
+                    title={`Focus StreetCLIP ROI on ${crop.label}`}
+                  >
+                    <img src={crop.dataUrl} alt={crop.label} className="edge-crop-img" />
+                  </button>
+                  <div className="edge-crop-foot">
+                    <span className="edge-crop-label">{crop.label}</span>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost edge-vlm-btn"
+                      disabled={vlmLoading}
+                      onClick={() => {
+                        onChangeMode('roi');
+                        onChangeRoi(crop.roi);
+                        onRunVlmOnRoi(vlmModelId, vlmGrounded, crop.roi);
+                      }}
+                      title={`Run Qwen-VL OCR on ${crop.label}`}
+                    >
+                      <ScanText size={12} aria-hidden="true" />
+                      <span>VLM</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.79rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Grid2x2 size={14} aria-hidden="true" />
+              <span>Upload or select a photo to inspect edge crops.</span>
+            </div>
+          )}
+        </div>
+      </details>
+
+      {/* Secondary control 3: Camera & EXIF metadata */}
       <details className="disclosure embedded">
         <summary>
           <span className="summary-title">Camera &amp; EXIF metadata</span>
@@ -360,6 +513,16 @@ export function ImageWorkbench({
                   <div className="exif-kv">
                     <div className="exif-k">Captured</div>
                     <div className="exif-v mono">{exif.dateTimeOriginal.slice(0, 19).replace('T', ' ')}</div>
+                  </div>
+                )}
+                {(exif.focalLength35mm || exif.focalLengthMm) && (
+                  <div className="exif-kv">
+                    <div className="exif-k">Optics &amp; FOV</div>
+                    <div className="exif-v mono">
+                      {exif.focalLength35mm
+                        ? `${exif.focalLength35mm}mm eq. (~${Math.round(exif.hfovDeg ?? 0)}° HFOV)`
+                        : `${exif.focalLengthMm?.toFixed(1)}mm`}
+                    </div>
                   </div>
                 )}
                 <div className="exif-kv">

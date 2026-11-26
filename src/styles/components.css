@@ -1256,3 +1256,239 @@ details.disclosure.embedded.hero-vlm-disclosure .disclosure-body {
   color: var(--text-primary);
   white-space: pre-wrap;
 }
+
+/* Geo-sleuth Tier 1 & Tier 2 Additions */
+.tier-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.tier-levels {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.level-chip {
+  padding: 0.14rem 0.45rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 600;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.level-chip.level-high {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border-subtle));
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, var(--bg-surface));
+}
+
+.level-chip.level-medium {
+  border-color: color-mix(in srgb, var(--amber) 35%, var(--border-subtle));
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 8%, var(--bg-surface));
+}
+
+.bimodal-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.42rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--border-subtle));
+  background: color-mix(in srgb, var(--amber) 9%, var(--bg-surface));
+  color: var(--text-primary);
+  font-size: 0.78rem;
+}
+
+.skyline-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.skyline-svg {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.skyline-badge {
+  pointer-events: auto;
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.24rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-pill);
+  background: rgba(24, 24, 27, 0.78);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.edge-crops-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+@media (max-width: 540px) {
+  .edge-crops-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.edge-crop-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.edge-crop-img-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: block;
+}
+
+.edge-crop-img {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+
+.edge-crop-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.2rem;
+  padding: 0.22rem 0.35rem;
+}
+
+.edge-crop-label {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edge-vlm-btn {
+  padding: 0.14rem 0.35rem !important;
+  font-size: 0.68rem !important;
+}
+
+.subpanel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+}
+
+.subpanel-desc {
+  margin: 0;
+  font-size: 0.79rem;
+  color: var(--text-secondary);
+}
+
+.inline-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.text-input {
+  flex: 1 1 210px;
+  padding: 0.42rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.81rem;
+}
+
+.clue-results-list,
+.evidence-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.clue-match-row,
+.evidence-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+
+.evidence-row.muted {
+  opacity: 0.55;
+}
+
+.evidence-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  font-size: 0.79rem;
+  min-inline-size: 0;
+}
+
+.evidence-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-tag {
+  padding: 0.1rem 0.36rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.solar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 0.5rem;
+}
+
+.subpanel-note {
+  padding: 0.48rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.subpanel-divider {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  margin: 0.25rem 0;
+}

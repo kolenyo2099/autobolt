@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   ShieldCheck,
   AlertTriangle,
@@ -7,9 +8,17 @@ import {
   Loader2,
   ScanText,
   Square,
+  Plus,
 } from 'lucide-react';
+import { extractAutoCluesFromVlmText } from '../engine/clues';
 import { VLM_MODEL_SPECS } from '../engine/vlmClient';
-import type { AnalysisResult, VlmModelId, VlmProgress, VlmResult } from '../engine/types';
+import type {
+  AnalysisResult,
+  EvidenceEntry,
+  VlmModelId,
+  VlmProgress,
+  VlmResult,
+} from '../engine/types';
 
 interface LeadSummaryProps {
   result: AnalysisResult | null;
@@ -22,10 +31,12 @@ interface LeadSummaryProps {
   vlmStreamText: string;
   vlmResult: VlmResult | null;
   vlmError: string | null;
+  evidenceEntries: EvidenceEntry[];
   onChangeVlmModel: (id: VlmModelId) => void;
   onChangeVlmGrounded: (grounded: boolean) => void;
   onRunVlmCheck: (modelId: VlmModelId, grounded: boolean) => void;
   onStopVlm: () => void;
+  onApplyEvidence: (entry: EvidenceEntry) => void;
 }
 
 function formatLatLng(lat: number, lng: number): string {
@@ -45,11 +56,32 @@ export function LeadSummary({
   vlmStreamText,
   vlmResult,
   vlmError,
+  evidenceEntries,
   onChangeVlmModel,
   onChangeVlmGrounded,
   onRunVlmCheck,
   onStopVlm,
+  onApplyEvidence,
 }: LeadSummaryProps) {
+  const [suggestedClues, setSuggestedClues] = useState<EvidenceEntry[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!vlmResult?.text || !result) {
+      setSuggestedClues([]);
+      return;
+    }
+    extractAutoCluesFromVlmText(vlmResult.text, result.countries)
+      .then((items) => {
+        if (!cancelled) setSuggestedClues(items);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestedClues([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [vlmResult, result]);
   const selectedVlmSpec =
     VLM_MODEL_SPECS.find((m) => m.id === vlmModelId) ?? VLM_MODEL_SPECS[0];
   const vlmPreview = vlmLoading
@@ -186,6 +218,26 @@ export function LeadSummary({
                 )}
               </div>
               <div className="vlm-output-text">{vlmActiveText}</div>
+              {vlmResult && suggestedClues.length > 0 && (
+                <div className="preset-row" style={{ marginTop: '0.25rem' }}>
+                  {suggestedClues.map((clue) => {
+                    const already = evidenceEntries.some((e) => e.id === clue.id);
+                    return (
+                      <button
+                        key={clue.id}
+                        type="button"
+                        className="btn btn-sm btn-pill"
+                        disabled={already}
+                        onClick={() => onApplyEvidence(clue)}
+                        title={clue.detail}
+                      >
+                        <Plus size={12} aria-hidden="true" />
+                        <span>{already ? 'Applied: ' : 'Apply: '}{clue.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -243,11 +295,35 @@ export function LeadSummary({
     <section className="panel-card hero-lead-card" aria-label="Primary Geolocation Lead">
       <div className="hero-lead-top">
         <span className="hero-eyebrow">Primary Lead</span>
-        <span className={`tier-badge ${tierClass}`}>
-          <TierIcon size={14} aria-hidden="true" />
-          <span>{result.confidence.tier}</span>
-        </span>
+        <div className="tier-group">
+          <div className="tier-levels mono" title="Independent geo-sleuth per-level confidence tiers">
+            <span className={`level-chip level-${result.confidence.levels.country.toLowerCase()}`}>
+              Country: {result.confidence.levels.country}
+            </span>
+            <span className={`level-chip level-${result.confidence.levels.region.toLowerCase()}`}>
+              Region: {result.confidence.levels.region}
+            </span>
+            <span className={`level-chip level-${result.confidence.levels.city.toLowerCase()}`}>
+              City: {result.confidence.levels.city}
+            </span>
+          </div>
+          <span className={`tier-badge ${tierClass}`}>
+            <TierIcon size={14} aria-hidden="true" />
+            <span>{result.confidence.tier}</span>
+          </span>
+        </div>
       </div>
+
+      {result.confidence.bimodalWarning && (
+        <div className="bimodal-warning">
+          <AlertTriangle size={13} aria-hidden="true" />
+          <span>
+            Competing hotspots ({result.confidence.bimodalWarning.separationKm} km apart):{' '}
+            <strong>{result.confidence.bimodalWarning.hotspotA}</strong> vs{' '}
+            <strong>{result.confidence.bimodalWarning.hotspotB}</strong> — check distinguishing clues rather than averaging.
+          </span>
+        </div>
+      )}
 
       <h2 className="hero-location">{locationTitle}</h2>
 

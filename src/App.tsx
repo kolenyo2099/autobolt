@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HeaderBar } from './components/HeaderBar';
 import { ImageWorkbench } from './components/ImageWorkbench';
 import { LeadSummary } from './components/LeadSummary';
@@ -8,8 +8,10 @@ import { ModelDialog } from './components/ModelDialog';
 import { StreetClipClient } from './engine/client';
 import { VlmClient } from './engine/vlmClient';
 import { extractImageExif } from './engine/exif';
+import { applyEvidenceToResult } from './engine/evidenceBoard';
 import {
   extractVlmImageRgb,
+  flipBitmapHorizontal,
   preprocessCenterCrop,
   preprocessMultiCrop,
   preprocessRoiCrop,
@@ -21,15 +23,20 @@ import type {
   BackendMode,
   CustomProbeResult,
   EngineSource,
+  EvidenceEntry,
   ExifMetadata,
   LoadProgress,
   ModelBenchmark,
+  OsmPin,
   RoiRect,
   SamplePhoto,
+  SkylineProfile,
+  SolarBandPoint,
   VlmModelId,
   VlmProgress,
   VlmResult,
 } from './engine/types';
+import { downloadEvidenceSheetPng } from './utils/evidenceSheet';
 import { buildMarkdownBrief, downloadJsonBrief } from './utils/exportBrief';
 
 function formatBytes(bytes: number): string {
@@ -51,6 +58,7 @@ function buildCrops(
 export function App() {
   const clientRef = useRef<StreetClipClient | null>(null);
   const currentObjectUrlRef = useRef<string | null>(null);
+  const mapSvgRef = useRef<SVGSVGElement | null>(null);
 
   const [engineSource, setEngineSource] = useState<EngineSource>('local-q4');
   const [backendMode, setBackendMode] = useState<BackendMode>('auto');
@@ -67,8 +75,15 @@ export function App() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string>('');
   const [imageBitmap, setImageBitmap] = useState<ImageBitmap | null>(null);
+  const [isMirrored, setIsMirrored] = useState(false);
+  const [flippedBitmap, setFlippedBitmap] = useState<ImageBitmap | null>(null);
   const [exif, setExif] = useState<ExifMetadata | null>(null);
   const [gpsRevealed, setGpsRevealed] = useState(false);
+
+  const [evidenceEntries, setEvidenceEntries] = useState<EvidenceEntry[]>([]);
+  const [solarBand, setSolarBand] = useState<SolarBandPoint[]>([]);
+  const [osmPins, setOsmPins] = useState<OsmPin[]>([]);
+  const [skyline, setSkyline] = useState<SkylineProfile | null>(null);
 
   const [mode, setMode] = useState<AnalysisMode>('center');
   const [roi, setRoi] = useState<RoiRect>({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
@@ -178,7 +193,7 @@ export function App() {
       sourceOverride?: EngineSource,
     ) => {
       const client = clientRef.current;
-      const bmp = bitmapOverride ?? imageBitmap;
+      const bmp = bitmapOverride ?? ((isMirrored && flippedBitmap) ? flippedBitmap : imageBitmap);
       const activeMode = modeOverride ?? mode;
       const activeRoi = roiOverride ?? roi;
       const activeSource = sourceOverride ?? engineSource;
@@ -224,7 +239,7 @@ export function App() {
         setErrorMsg(err instanceof Error ? err.message : String(err));
       }
     },
-    [imageBitmap, mode, roi, engineSource],
+    [imageBitmap, isMirrored, flippedBitmap, mode, roi, engineSource],
   );
 
   const loadBlobImage = useCallback(
@@ -247,8 +262,17 @@ export function App() {
         prev?.close();
         return bitmap;
       });
+      setIsMirrored(false);
+      setFlippedBitmap((prev) => {
+        prev?.close();
+        return null;
+      });
       setExif(parsedExif);
       setGpsRevealed(false);
+      setEvidenceEntries([]);
+      setSolarBand([]);
+      setOsmPins([]);
+      setSkyline(null);
       setVlmResult(null);
       setVlmStreamText('');
       setVlmError(null);
@@ -324,8 +348,37 @@ export function App() {
     return vlmClientRef.current;
   };
 
-  const handleRunVlmCheck = async (targetModelId: VlmModelId, grounded: boolean) => {
-    if (!imageBitmap || vlmLoading) return;
+  const effectiveResult = useMemo(
+    () => (result ? applyEvidenceToResult(result, evidenceEntries) : null),
+    [result, evidenceEntries],
+  );
+
+  const activeBitmap = (isMirrored && flippedBitmap) ? flippedBitmap : imageBitmap;
+
+  const handleToggleMirror = async () => {
+    if (!imageBitmap) return;
+    if (!isMirrored) {
+      const flipped = flippedBitmap ?? (await flipBitmapHorizontal(imageBitmap));
+      if (!flippedBitmap) setFlippedBitmap(flipped);
+      setIsMirrored(true);
+      if (modelStatus === 'ready') {
+        await runAnalysis(flipped, mode, roi, engineSource);
+      }
+    } else {
+      setIsMirrored(false);
+      if (modelStatus === 'ready') {
+        await runAnalysis(imageBitmap, mode, roi, engineSource);
+      }
+    }
+  };
+
+  const handleRunVlmCheck = async (
+    targetModelId: VlmModelId,
+    grounded: boolean,
+    roiOverride?: RoiRect,
+  ) => {
+    const bmp = activeBitmap;
+    if (!bmp || vlmLoading) return;
     setVlmModelId(targetModelId);
     setVlmGrounded(grounded);
     setVlmLoading(true);
@@ -340,24 +393,21 @@ export function App() {
     });
 
     try {
-      const { data, width, height } = extractVlmImageRgb(
-        imageBitmap,
-        mode === 'roi' ? roi : null,
-        448,
-      );
+      const activeRoi = roiOverride ?? (mode === 'roi' ? roi : null);
+      const { data, width, height } = extractVlmImageRgb(bmp, activeRoi, 448);
 
       let contextLeadSummary: string | undefined;
-      if (grounded && result) {
-        const topCountries = result.countries
+      if (grounded && effectiveResult) {
+        const topCountries = effectiveResult.countries
           .slice(0, 3)
           .map((c) => `${c.name} (${(c.prob * 100).toFixed(0)}%)`)
           .join(', ');
-        const topCities = result.citiesHierarchical
+        const topCities = effectiveResult.citiesHierarchical
           .slice(0, 3)
           .map((c) => `${c.name}, ${c.region}`)
           .join(' | ');
-        const coordLine = result.geocell
-          ? `Estimated coords: ${result.geocell.lat.toFixed(2)}, ${result.geocell.lng.toFixed(2)}`
+        const coordLine = effectiveResult.geocell
+          ? `Estimated coords: ${effectiveResult.geocell.lat.toFixed(2)}, ${effectiveResult.geocell.lng.toFixed(2)}`
           : '';
         contextLeadSummary = [
           topCountries ? `Top countries: ${topCountries}` : '',
@@ -416,17 +466,40 @@ export function App() {
   };
 
   const handleCopyBrief = async () => {
-    if (!result) return;
-    const md = buildMarkdownBrief(result, imageName, exif, gpsRevealed, vlmResult);
+    if (!effectiveResult) return;
+    const md = buildMarkdownBrief(
+      effectiveResult,
+      imageName,
+      exif,
+      gpsRevealed,
+      vlmResult,
+      evidenceEntries,
+    );
     await navigator.clipboard.writeText(md);
     setCopiedBrief(true);
     setTimeout(() => setCopiedBrief(false), 2000);
   };
 
+  const handleDownloadEvidencePng = async () => {
+    if (!effectiveResult || !activeBitmap) return;
+    await downloadEvidenceSheetPng({
+      imageBitmap: activeBitmap,
+      imageName,
+      mode,
+      roi,
+      mapSvgEl: mapSvgRef.current,
+      result: effectiveResult,
+      exif,
+      gpsRevealed,
+      vlmResult,
+      evidenceEntries,
+    });
+  };
+
   const selectedCity =
-    result?.citiesHierarchical.find((c) => c.name === selectedCityName) ??
-    result?.citiesGlobal.find((c) => c.name === selectedCityName) ??
-    result?.citiesHierarchical[0] ??
+    effectiveResult?.citiesHierarchical.find((c) => c.name === selectedCityName) ??
+    effectiveResult?.citiesGlobal.find((c) => c.name === selectedCityName) ??
+    effectiveResult?.citiesHierarchical[0] ??
     null;
 
   const modelSizeLabel = benchmark
@@ -452,12 +525,15 @@ export function App() {
         backend={activeBackend}
         backendMode={backendMode}
         engineSource={engineSource}
-        lastResult={result}
+        lastResult={effectiveResult}
         status={modelStatus}
         copiedBrief={copiedBrief}
         onChangeEngine={handleChangeEngine}
         onCopyBrief={handleCopyBrief}
-        onDownloadJson={() => result && downloadJsonBrief(result, imageName, vlmResult)}
+        onDownloadJson={() =>
+          effectiveResult && downloadJsonBrief(effectiveResult, imageName, vlmResult, evidenceEntries)
+        }
+        onDownloadEvidencePng={handleDownloadEvidencePng}
       />
 
       {(modelStatus === 'loading' || errorMsg) && (
@@ -492,7 +568,9 @@ export function App() {
         <ImageWorkbench
           imageUrl={imageUrl}
           imageName={imageName}
-          imageBitmap={imageBitmap}
+          imageBitmap={activeBitmap}
+          isMirrored={isMirrored}
+          skyline={skyline}
           samples={samples}
           activeSampleId={activeSampleId}
           mode={mode}
@@ -500,42 +578,50 @@ export function App() {
           exif={exif}
           gpsRevealed={gpsRevealed}
           topCityCoords={
-            result?.geocell
+            effectiveResult?.geocell
               ? {
-                  name: result.geocell.nearestCity
-                    ? `OSV-5M Est. near ${result.geocell.nearestCity}`
+                  name: effectiveResult.geocell.nearestCity
+                    ? `OSV-5M Est. near ${effectiveResult.geocell.nearestCity}`
                     : 'OSV-5M Est.',
-                  lat: result.geocell.lat,
-                  lng: result.geocell.lng,
+                  lat: effectiveResult.geocell.lat,
+                  lng: effectiveResult.geocell.lng,
                 }
-              : result?.citiesHierarchical[0]
+              : effectiveResult?.citiesHierarchical[0]
                 ? {
-                    name: result.citiesHierarchical[0].name,
-                    lat: result.citiesHierarchical[0].lat,
-                    lng: result.citiesHierarchical[0].lng,
+                    name: effectiveResult.citiesHierarchical[0].name,
+                    lat: effectiveResult.citiesHierarchical[0].lat,
+                    lng: effectiveResult.citiesHierarchical[0].lng,
                   }
                 : null
           }
           analyzing={modelStatus === 'analyzing'}
           modelReady={modelStatus === 'ready'}
+          vlmLoading={vlmLoading}
+          vlmModelId={vlmModelId}
+          vlmGrounded={vlmGrounded}
           onSelectFile={handleSelectFile}
           onSelectSample={handleSelectSample}
           onChangeMode={(nextMode) => {
             setMode(nextMode);
-            if (imageBitmap && modelStatus === 'ready' && nextMode !== 'roi') {
-              runAnalysis(imageBitmap, nextMode, roi, engineSource);
+            if (activeBitmap && modelStatus === 'ready' && nextMode !== 'roi') {
+              runAnalysis(activeBitmap, nextMode, roi, engineSource);
             }
           }}
           onChangeRoi={setRoi}
-          onRunAnalysis={() => runAnalysis()}
+          onToggleMirror={handleToggleMirror}
+          onClearSkyline={() => setSkyline(null)}
+          onRunAnalysis={(modeOverride, roiOverride) =>
+            runAnalysis(activeBitmap ?? undefined, modeOverride, roiOverride)
+          }
+          onRunVlmOnRoi={(mId, g, r) => handleRunVlmCheck(mId, g, r)}
           onToggleRevealGps={() => setGpsRevealed((v) => !v)}
         />
 
         <div className="right-column">
           <LeadSummary
-            result={result}
+            result={effectiveResult}
             analyzing={modelStatus === 'analyzing'}
-            hasImage={Boolean(imageBitmap)}
+            hasImage={Boolean(activeBitmap)}
             vlmModelId={vlmModelId}
             vlmGrounded={vlmGrounded}
             vlmLoading={vlmLoading}
@@ -543,20 +629,29 @@ export function App() {
             vlmStreamText={vlmStreamText}
             vlmResult={vlmResult}
             vlmError={vlmError}
+            evidenceEntries={evidenceEntries}
             onChangeVlmModel={setVlmModelId}
             onChangeVlmGrounded={setVlmGrounded}
-            onRunVlmCheck={handleRunVlmCheck}
+            onRunVlmCheck={(mId, g) => handleRunVlmCheck(mId, g)}
             onStopVlm={handleStopVlm}
+            onApplyEvidence={(entry) =>
+              setEvidenceEntries((prev) =>
+                prev.some((e) => e.id === entry.id) ? prev : [...prev, entry],
+              )
+            }
           />
 
           <WorldMap
-            countries={result?.countries ?? []}
+            countries={effectiveResult?.countries ?? []}
             cities={
               selectedCountryCode
-                ? (result?.citiesGlobal ?? []).filter((c) => c.countryCode === selectedCountryCode)
-                : result?.citiesHierarchical ?? []
+                ? (effectiveResult?.citiesGlobal ?? []).filter((c) => c.countryCode === selectedCountryCode)
+                : effectiveResult?.citiesHierarchical ?? []
             }
-            geocell={result?.geocell}
+            geocell={effectiveResult?.geocell}
+            solarBand={solarBand}
+            osmPins={osmPins}
+            svgRef={mapSvgRef}
             selectedCountryCode={selectedCountryCode}
             selectedCity={selectedCity}
             focusTarget={focusTarget}
@@ -571,7 +666,8 @@ export function App() {
           />
 
           <LeadDisclosures
-            result={result}
+            result={effectiveResult}
+            exif={exif}
             engineSource={engineSource}
             backendMode={backendMode}
             selectedCountryCode={selectedCountryCode}
@@ -584,6 +680,26 @@ export function App() {
             osv5mSizeLabel={osv5mSizeLabel}
             geocellsSizeLabel={geocellsSizeLabel}
             backend={activeBackend}
+            evidenceEntries={evidenceEntries}
+            solarBandCount={solarBand.length}
+            osmPins={osmPins}
+            skyline={skyline}
+            onAddEvidence={(entry) =>
+              setEvidenceEntries((prev) => [...prev, entry])
+            }
+            onToggleEvidence={(id) =>
+              setEvidenceEntries((prev) =>
+                prev.map((e) => (e.id === id ? { ...e, active: !e.active } : e)),
+              )
+            }
+            onRemoveEvidence={(id) =>
+              setEvidenceEntries((prev) => prev.filter((e) => e.id !== id))
+            }
+            onClearEvidence={() => setEvidenceEntries([])}
+            onPlotSolarBand={setSolarBand}
+            onClearSolarBand={() => setSolarBand([])}
+            onSetOsmPins={setOsmPins}
+            onSetSkyline={setSkyline}
             onChangeEngine={handleChangeEngine}
             onSelectCountry={setSelectedCountryCode}
             onSelectCity={(city) => {

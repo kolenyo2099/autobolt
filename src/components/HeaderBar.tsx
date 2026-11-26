@@ -5,6 +5,7 @@ import {
   Copy,
   Check,
   MoreHorizontal,
+  ImageDown,
 } from 'lucide-react';
 import type {
   ActiveBackend,
@@ -23,6 +24,7 @@ interface HeaderBarProps {
   onChangeEngine: (source: EngineSource, backend: BackendMode) => void;
   onCopyBrief: () => void;
   onDownloadJson: () => void;
+  onDownloadEvidencePng: () => void;
 }
 
 const ENGINE_OPTIONS: ReadonlyArray<{
@@ -65,6 +67,7 @@ export function HeaderBar({
   onChangeEngine,
   onCopyBrief,
   onDownloadJson,
+  onDownloadEvidencePng,
 }: HeaderBarProps) {
   const dotClass =
     status === 'error'
@@ -190,6 +193,20 @@ export function HeaderBar({
             >
               <Download size={15} aria-hidden="true" />
               <span>Download Report (JSON)</span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              className="menu-item-btn"
+              disabled={!lastResult}
+              onClick={() => {
+                onDownloadEvidencePng();
+                closeMenu();
+              }}
+            >
+              <ImageDown size={15} aria-hidden="true" />
+              <span>Download Evidence Sheet (PNG)</span>
             </button>
           </div>
         </div>

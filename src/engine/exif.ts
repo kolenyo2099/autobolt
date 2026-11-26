@@ -22,6 +22,16 @@ export async function extractImageExif(file: Blob): Promise<ExifMetadata | null>
     }
     if (typeof parsed.ExifImageWidth === 'number') meta.width = parsed.ExifImageWidth;
     if (typeof parsed.ExifImageHeight === 'number') meta.height = parsed.ExifImageHeight;
+    if (typeof parsed.FocalLength === 'number' && parsed.FocalLength > 0) {
+      meta.focalLengthMm = parsed.FocalLength;
+    }
+    if (typeof parsed.FocalLengthIn35mmFormat === 'number' && parsed.FocalLengthIn35mmFormat > 0) {
+      meta.focalLength35mm = parsed.FocalLengthIn35mmFormat;
+      meta.hfovDeg = (2 * Math.atan(36 / (2 * parsed.FocalLengthIn35mmFormat)) * 180) / Math.PI;
+    }
+    if (typeof parsed.Orientation === 'number') {
+      meta.orientation = parsed.Orientation;
+    }
 
     if (
       typeof parsed.latitude === 'number' &&
@@ -36,7 +46,14 @@ export async function extractImageExif(file: Blob): Promise<ExifMetadata | null>
     }
 
     const hasAny =
-      meta.make || meta.model || meta.lensModel || meta.dateTimeOriginal || meta.gps || meta.width;
+      meta.make ||
+      meta.model ||
+      meta.lensModel ||
+      meta.dateTimeOriginal ||
+      meta.focalLength35mm ||
+      meta.focalLengthMm ||
+      meta.gps ||
+      meta.width;
     return hasAny ? meta : null;
   } catch {
     return null;

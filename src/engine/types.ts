@@ -97,8 +97,20 @@ export interface ScoredVisualAxis {
   topItem: ScoredVisualItem;
 }
 
+export type ConfidenceLevel = 'High' | 'Medium' | 'Low';
+
 export interface ConfidenceSummary {
   tier: 'High Signal' | 'Moderate Lead' | 'Ambiguous';
+  levels: {
+    country: ConfidenceLevel;
+    region: ConfidenceLevel;
+    city: ConfidenceLevel;
+  };
+  bimodalWarning?: {
+    hotspotA: string;
+    hotspotB: string;
+    separationKm: number;
+  };
   entropyNormalized: number; // 0 = completely certain, 1 = uniform
   top1Margin: number; // top1 - top2 probability
   top1Prob: number;
@@ -177,6 +189,10 @@ export interface ExifMetadata {
   model?: string;
   lensModel?: string;
   dateTimeOriginal?: string;
+  focalLengthMm?: number;
+  focalLength35mm?: number;
+  hfovDeg?: number;
+  orientation?: number;
   gps?: {
     lat: number;
     lng: number;
@@ -306,4 +322,72 @@ export interface VlmResult {
   tokenCount: number;
   tokensPerSec: number;
   groundedWithLeads: boolean;
+}
+
+export type EvidenceStatus = 'observed' | 'read' | 'inferred' | 'computed';
+
+export interface EvidenceEntry {
+  id: string;
+  kind: 'calling-code' | 'driving-side' | 'script' | 'plate' | 'area-code' | 'territory' | 'sun' | 'custom';
+  label: string;
+  detail: string;
+  status: EvidenceStatus;
+  countryCodes: string[];
+  likelihoodRatio: number;
+  active: boolean;
+  source: 'lookup' | 'vlm-ocr' | 'sun' | 'manual';
+}
+
+export interface ClueMatch {
+  id: string;
+  kind: EvidenceEntry['kind'];
+  title: string;
+  subtitle: string;
+  countryCodes: string[];
+  likelihoodRatio: number;
+  status: EvidenceStatus;
+}
+
+export interface SolarBandPoint {
+  lat: number;
+  lng: number;
+  score: number;
+  elevDiffDeg: number;
+  azDiffDeg?: number;
+}
+
+export interface SolarTimeWindow {
+  startTime: string;
+  endTime: string;
+  peakMatchTime: string;
+  elevDeg: number;
+  azimuthDeg: number;
+  shadowBearingDeg: number;
+}
+
+export interface OsmPin {
+  id: string;
+  name: string;
+  category: string;
+  lat: number;
+  lng: number;
+}
+
+export interface SkylineSample {
+  xNorm: number;
+  elevDeg: number;
+  distanceKm: number;
+  bearingDeg: number;
+}
+
+export interface SkylineProfile {
+  lat: number;
+  lng: number;
+  headingDeg: number;
+  hfovDeg: number;
+  pitchDeg: number;
+  observerElevM: number;
+  maxElevDeg: number;
+  minElevDeg: number;
+  samples: SkylineSample[];
 }

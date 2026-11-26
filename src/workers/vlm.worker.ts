@@ -164,14 +164,15 @@ async function ensureModelLoaded(modelId: VlmModelId): Promise<void> {
 
 function buildGeoPrompt(contextLeadSummary?: string): string {
   const leadBlock = contextLeadSummary
-    ? `AutoBolt embedding leads (hypotheses to verify or challenge):\n${contextLeadSummary}\n\n`
+    ? `AutoBolt candidate hypotheses to verify or challenge:\n${contextLeadSummary}\n\n`
     : '';
   return (
     `${leadBlock}` +
-    `Analyze this street-level photo for geolocation clues in 3 concise bullet points:\n` +
-    `1. **Visible Text & Scripts**: Quote readable street signs, shopfronts, or license plate formats (or state "None clearly legible").\n` +
-    `2. **Distinctive Clues**: Note architecture, utility poles/bollards, road markings, vehicles, driving side, and climate.\n` +
-    `3. **Location Assessment**: State your best city/region/country call and whether the clues support or challenge any candidate leads.`
+    `Follow this ordered geolocation observation checklist concisely (mark unclear details as "illegible"):\n` +
+    `1. **Capture & Orientation**: Platform (street/building/vehicle/aerial) and whether any text/traffic appears horizontally mirrored.\n` +
+    `2. **Verbatim Text, Codes & Script**: Quote exact visible text, issuing authorities, phone/area codes (with '+' country code if visible), script/language, and license plate aspect/color.\n` +
+    `3. **Driving Side & Infrastructure**: Left- vs right-hand traffic, utility poles/bollards, streetlights, road markings, architecture, and climate.\n` +
+    `4. **Assessment**: Best city/region/country call and whether these clues confirm or challenge any candidate leads.`
   );
 }
 
@@ -246,7 +247,7 @@ self.onmessage = async (event: MessageEvent) => {
 
       const outputs = await loadedModel.generate({
         ...inputs,
-        max_new_tokens: 220,
+        max_new_tokens: 300,
         do_sample: false,
         streamer,
       });

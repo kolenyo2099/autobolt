@@ -1,4 +1,4 @@
-import type { AnalysisResult, ExifMetadata, VlmResult } from '../engine/types';
+import type { AnalysisResult, EvidenceEntry, ExifMetadata, VlmResult } from '../engine/types';
 import { haversineDistanceKm } from '../engine/exif';
 
 export function buildMarkdownBrief(
@@ -7,10 +7,12 @@ export function buildMarkdownBrief(
   exif: ExifMetadata | null,
   gpsRevealed: boolean,
   vlmResult?: VlmResult | null,
+  evidenceEntries?: EvidenceEntry[],
 ): string {
   const topCountries = result.countries.slice(0, 5);
   const topRegions = result.regionsHierarchical.slice(0, 5);
   const topCities = result.citiesHierarchical.slice(0, 5);
+  const activeEvidence = (evidenceEntries ?? []).filter((e) => e.active);
 
   const lines: string[] = [
     `# Investigations Lab's AutoBolt — Geolocation Lead Brief`,
@@ -18,10 +20,24 @@ export function buildMarkdownBrief(
     `- **Image:** ${imageName}`,
     `- **Analysis Mode:** ${result.mode} (${result.cropCount} crop${result.cropCount > 1 ? 's' : ''})`,
     `- **Runtime:** ${result.backend.toUpperCase()} (${result.latencyMs.toFixed(0)} ms, 100% in-browser)`,
-    `- **Signal Tier:** ${result.confidence.tier} (Top-1 ${(result.confidence.top1Prob * 100).toFixed(1)}%, Margin ${(result.confidence.top1Margin * 100).toFixed(1)}%)`,
+    `- **Confidence Tiers:** Overall ${result.confidence.tier} · Country: ${result.confidence.levels.country} · Region: ${result.confidence.levels.region} · City: ${result.confidence.levels.city}`,
+    ...(result.confidence.bimodalWarning
+      ? [
+          `- **Competing Clusters:** ${result.confidence.bimodalWarning.hotspotA} vs ${result.confidence.bimodalWarning.hotspotB} (${result.confidence.bimodalWarning.separationKm} km apart)`,
+        ]
+      : []),
     ``,
     `## Investigative Summary`,
     result.confidence.brief,
+    ...(activeEvidence.length > 0
+      ? [
+          ``,
+          `## Applied Evidence Board (Bayesian Likelihood Ratios)`,
+          ...activeEvidence.map(
+            (ev) => `- **[${ev.status.toUpperCase()}]** ${ev.label} (${ev.detail}, LR=${ev.likelihoodRatio.toFixed(1)}×)`,
+          ),
+        ]
+      : []),
     ``,
     `## Top Country Leads`,
     ...topCountries.map(
@@ -88,6 +104,7 @@ export function downloadJsonBrief(
   result: AnalysisResult,
   imageName: string,
   vlmResult?: VlmResult | null,
+  evidenceEntries?: EvidenceEntry[],
 ): void {
   const payload = {
     image: imageName,
@@ -99,6 +116,7 @@ export function downloadJsonBrief(
       cropCount: result.cropCount,
     },
     confidence: result.confidence,
+    evidenceBoard: (evidenceEntries ?? []).filter((e) => e.active),
     geocell: result.geocell
       ? {
           lat: result.geocell.lat,
